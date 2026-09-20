@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dev-*.log
+dev-*.err.log
+.env
+.env.*
+!.env.example
+.neon
+
+.vercel
