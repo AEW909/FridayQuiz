@@ -1,5 +1,6 @@
 import pg from "pg";
 import { requireClassMembership, requireTeacher, upsertTeacher } from "./_auth.js";
+import { canChangeTeamCount } from "./_team-roster.js";
 
 const { Pool } = pg;
 const defaultClassId = "10000000-0000-4000-8000-000000000004";
@@ -44,6 +45,17 @@ export async function PUT(request: Request) {
       if (isClassScoped) await requireClassMembership(client, classId, teacher.id);
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "Teacher sign-in is required." }, error instanceof Error && error.message.includes("access to this class") ? 403 : 401);
+    }
+    const roster = await client.query(
+      `SELECT count(*) FILTER (WHERE t.active)::int AS "activeTeamCount",
+              EXISTS(SELECT 1 FROM weekly_scores ws JOIN teams scored_team ON scored_team.id = ws.team_id WHERE scored_team.class_id = $1) AS "hasSubmittedScores"
+         FROM teams t
+        WHERE t.class_id = $1`,
+      [classId],
+    );
+    const { activeTeamCount, hasSubmittedScores } = roster.rows[0] as { activeTeamCount: number; hasSubmittedScores: boolean };
+    if (!canChangeTeamCount(hasSubmittedScores, activeTeamCount, teams.length)) {
+      return json({ error: "The team count is locked once this class has submitted results. You can still rename teams and change their colours." }, 409);
     }
     await client.query("BEGIN");
     // Vacate unique names before applying a whole roster update, so name swaps work.

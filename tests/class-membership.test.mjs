@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { hasSchoolAdminGroup, requireClassMembership } from "../api/_auth.ts";
+import { canChangeTeamCount } from "../api/_team-roster.ts";
 
 function membershipClient(row) {
   return {
@@ -28,4 +29,10 @@ test("school overview requires a configured dedicated Entra group", () => {
   assert.equal(hasSchoolAdminGroup(["staff", "quiz-admins"], "quiz-admins"), true);
   assert.equal(hasSchoolAdminGroup(["staff"], "quiz-admins"), false);
   assert.equal(hasSchoolAdminGroup(["quiz-admins"], undefined), false);
+});
+
+test("a submitted class can rename teams but cannot change its team count", () => {
+  assert.equal(canChangeTeamCount(true, 6, 6), true);
+  assert.equal(canChangeTeamCount(true, 6, 7), false);
+  assert.equal(canChangeTeamCount(false, 6, 7), true);
 });
