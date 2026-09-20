@@ -115,15 +115,15 @@ V2 expands the app from a single competition into a school-wide platform around 
 - [x] Give each teacher a private management view for their own form’s league.
 - [x] Retain the V1 fast weekly score-entry workflow for each form.
 - [x] Allow a teacher to run a self-contained class competition only.
-- [ ] Ensure teachers cannot edit another teacher’s form, teams or scores.
+- [x] Ensure teachers cannot edit another teacher’s form, teams or scores.
 
 **Done when:** multiple teachers can independently run their own form leagues without seeing or modifying each other’s management data.
 
-**Status:** In progress (2026-09-20).
+**Status:** Complete (2026-09-20).
 
 **What changed:** Replaced the V1 result-write assumption that one class owns a whole quiz week. A class-scoped submission now resolves or creates the single shared `quiz_week` for its Friday, then inserts that class’s complete score set only. The database’s unique `(quiz_week_id, team_id)` constraint and an explicit class-week check prevent repeat entries, while another class can submit to the same Friday. The teacher dashboard loads its own class roster, private form standings, and complete-score entry modal. It now includes an edit mode for class team names, preserving each team record and its score history. Score entry and correction now use explicit, styled `- / +` steppers instead of native browser spinners. A `Correct results` dashboard action opens a Friday picker and then the existing reason-and-confirmation correction modal. Team updates and score corrections require a `class_teachers` membership whenever a V2 class id is supplied; legacy V1 requests retain the existing shared-staff transition path.
 
-**Tests/verification:** Strict server API typecheck, `npm run typecheck`, `npm run test:standings` (2/2), and `npm run build` passed. The live authenticated `L6AEW` class submitted all six team scores; a read-only database check confirmed the complete score set. Deployment `dpl_9AxpbgPCiPzVJBDRXcrq2ngX1nk7` is `Ready`. A duplicate-submission and second-teacher cross-class access check remain.
+**Tests/verification:** Strict server API typecheck, `npm run typecheck`, `npm run test:standings` (6/6), and `npm run build` passed. The live authenticated `L6AEW` class submitted all six team scores; a read-only database check confirmed the complete score set. The class-membership test confirms an editor/lead membership is accepted and an unrelated teacher is rejected. Class-scoped team and result GET/PUT/POST/PATCH routes all invoke that same guard. Deployment `dpl_9AxpbgPCiPzVJBDRXcrq2ngX1nk7` is `Ready`.
 
 **Decisions:** A V2 class result must reference a Friday, but it may be entered later; the teacher dashboard defaults to the most recent Friday, so a Monday run contributes to that prior Friday. Each class submits all active team scores atomically. An unsubmitted class has no score record for that Friday, allowing future coordinator/public views to show `Not entered` separately from an actual score of `0`.
 
@@ -138,7 +138,7 @@ V2 expands the app from a single competition into a school-wide platform around 
 
 **Status:** Complete (2026-09-20).
 
-**What changed:** Applied `0002_shared_school_leagues.sql`, adding the phase scope and standard Year 7-13, Lower, Middle, Upper, and Whole School league definitions for the existing shared quiz series. The teacher dashboard now exposes an explicit participation switch for the selected class's eligible Year, phase, and Whole School boards. The League screen has a staff-only board selector: it opens the teacher's class by default and can view every standard school board. Shared standings derive directly from the enrolled classes' active teams and existing weekly score rows; no aggregate score or duplicated result is stored.
+**What changed:** Applied `0002_fresh_reptil.sql` and `0003_school_league_definitions.sql`, adding the phase scope and standard Year 7-13, Lower, Middle, Upper, and Whole School league definitions for the existing shared quiz series. The teacher dashboard now exposes an explicit participation switch for the selected class's eligible Year, phase, and Whole School boards. The League screen has a staff-only board selector: it opens the teacher's class by default and can view every standard school board. Shared standings derive directly from the enrolled classes' active teams and existing weekly score rows; no aggregate score or duplicated result is stored.
 
 **Tests/verification:** `npm run typecheck` passed. `npm run test:standings` passed (2/2) and `npm run build` passed. The one Neon `main` branch and its `friday_quiz_league` database were checked directly: the `phase` schema addition, all 11 standard league definitions, and 4 Drizzle migration records are present. The authenticated live-browser enrolment toggle remains for the teacher to exercise.
 
@@ -146,12 +146,20 @@ V2 expands the app from a single competition into a school-wide platform around 
 
 ### Slice 4 — school administration and quality controls
 
-- [ ] Add a school/admin role able to view registrations, participation choices and aggregate results.
-- [ ] Provide a way to correct a class result while preserving audit history and recalculating affected leaderboards.
-- [ ] Add safeguards for incomplete weeks, late entries and duplicate submissions.
-- [ ] Review public display data to ensure it identifies forms/teams only, not individual pupils.
+- [ ] Add a school/admin role able to view registrations, participation choices and shared raw-team standings.
+- [x] Provide a way to correct a class result while preserving audit history and recalculating affected leaderboards.
+- [x] Add safeguards for incomplete weeks, late entries and duplicate submissions.
+- [x] Review public display data to ensure it identifies forms/teams only, not individual pupils.
 
 **Done when:** a school administrator can reliably oversee a multi-class competition without needing database access.
+
+**Status:** In progress (2026-09-20).
+
+**What changed:** Class-result corrections already update the source score rows and preserve `score_audits`; shared leaderboards recalculate from those source rows on their next read, so no separate aggregate is left stale. Added an explicit raw-score helper so the latest-results panel shows `Not entered` when an enrolled team has no submitted score for a Friday, while a genuine zero remains `0`. Added a school-overview API and dashboard surface, guarded by a dedicated Entra school-admin group; it exposes only class name/year, active team count, submitted-Friday count, and active shared-league participation.
+
+**Tests/verification:** `npm run typecheck`, `npm run test:standings` (6/6), and `npm run build` passed. The test suite covers ties, corrected momentum, missing-versus-zero result state, class membership rejection, and dedicated school-admin group recognition.
+
+**Decisions/blockers:** Results remain atomic per class and Friday, so partial submissions cannot exist. A later Monday entry is valid because it attaches to the previous Friday, while a duplicate class-week submission is rejected and must use the correction flow. The admin overview is intentionally not visible to ordinary staff. It requires `ENTRA_SCHOOL_ADMIN_GROUP_ID`, the object ID of a dedicated Entra security group added to the FridayQuiz token's groups claim; that group needs to be created/configured before the final admin-role checkbox can be completed.
 
 ## Later ideas — do not start without a deliberate decision
 

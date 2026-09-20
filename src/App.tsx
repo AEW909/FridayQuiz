@@ -8,7 +8,7 @@ import {
   signOutFromMicrosoft,
   type TeacherIdentity,
 } from "./auth/microsoft";
-import { getCumulativeScores, getStandings, type Standing } from "./lib/standings";
+import { getCumulativeScores, getScoreForWeek, getStandings, type Standing } from "./lib/standings";
 import type { LeagueData, TeamId } from "./types";
 
 type View = "league" | "admin";
@@ -19,6 +19,7 @@ type ManagedClass = { id: string; name: string; yearGroup: number; role: "lead" 
 type TeacherProfile = { teacher: { id: string; displayName: string; email: string | null }; classes: ManagedClass[]; needsRegistration: boolean };
 type RegistrationTeam = { name: string; colour: string };
 type LeagueOption = { id: string; name: string; scope: "year_group" | "phase" | "whole_school"; yearGroup: number | null; phase: string | null; eligible: boolean; enrolmentStatus: "active" | "withdrawn" | null };
+type SchoolOverview = { totals: { classes: number; teams: number; submittedClasses: number }; classes: Array<{ id: string; name: string; yearGroup: number; leadTeacher: string | null; teamCount: number; submittedWeeks: number; lastSubmittedOn: string | null; participation: Array<{ name: string; status: "active" | "withdrawn" | "paused" }> }> };
 
 const teamColours = ["#f7c948", "#47d990", "#ff626f", "#42a8ff", "#b68cff", "#35d7df", "#fb923c", "#d946ef", "#a3e635", "#f472b6"];
 
@@ -156,6 +157,8 @@ export function App() {
   const [editingRoster, setEditingRoster] = useState(false);
   const [classTeamNames, setClassTeamNames] = useState<Record<string, string>>({});
   const [savingRoster, setSavingRoster] = useState(false);
+  const [schoolOverview, setSchoolOverview] = useState<SchoolOverview>();
+  const [showSchoolOverview, setShowSchoolOverview] = useState(false);
 
   useEffect(() => {
     void getSignedInTeacher().then(setTeacher).catch(() => setAuthError("Microsoft sign-in could not be restored."));
@@ -169,6 +172,9 @@ export function App() {
       const payload = await response.json() as TeacherProfile & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not load your class profile.");
       setTeacherProfile(payload);
+      const overviewResponse = await fetch("/api/admin-overview", { headers: { Authorization: `Bearer ${token}` } });
+      if (overviewResponse.ok) setSchoolOverview(await overviewResponse.json() as SchoolOverview);
+      else setSchoolOverview(undefined);
       if (!payload.needsRegistration && payload.classes.length === 1) {
         setSelectedClassId(payload.classes[0].id);
         setView("league");
@@ -193,6 +199,8 @@ export function App() {
       setProfileState("idle");
       setSelectedClassId(undefined);
       setManagedLeague(undefined);
+      setSchoolOverview(undefined);
+      setShowSchoolOverview(false);
     }
   }, [teacher, loadTeacherProfile]);
 
@@ -281,8 +289,11 @@ export function App() {
   const standings = useMemo(() => getStandings(displayedLeague), [displayedLeague]);
   const standingsScrolls = standings.length > 6;
   const winner = standings[0];
-  const latestScores = [...standings].sort((left, right) => (right.scores.at(-1) ?? 0) - (left.scores.at(-1) ?? 0));
-  const thisWeek = latestScores[0];
+  const latestWeek = [...displayedLeague.quizWeeks].sort((left, right) => right.weekNumber - left.weekNumber)[0];
+  const latestScores = standings
+    .map((team) => ({ ...team, latestScore: latestWeek ? getScoreForWeek(displayedLeague, team.id, latestWeek.id) : undefined }))
+    .sort((left, right) => (right.latestScore ?? -1) - (left.latestScore ?? -1) || left.displayOrder - right.displayOrder);
+  const thisWeek = latestScores.find((team) => team.latestScore !== undefined) ?? latestScores[0];
   const hasPublishedResults = displayedLeague.quizWeeks.length > 0;
   const entryLeague = entryClassId ? managedLeague : league;
 
@@ -614,8 +625,8 @@ export function App() {
           </section>
           <section className="chart-panel scoreboard-panel"><div className="section-heading"><span>TEAM MOMENTUM</span><strong>Cumulative points by week</strong></div><MomentumChart teams={standings} /><div className="legend">{standings.map((team) => <span key={team.id}><i style={{ background: team.colour }} />{team.name}</span>)}</div></section>
           <section className={teacher ? "league-bottom with-action" : "league-bottom"}>
-            <section className="winner-panel"><img src="/assets/champion-trophy.png" alt="Golden quiz league trophy" /><div><span>THIS WEEK’S WINNER</span><h1>{hasPublishedResults ? thisWeek.name : "No result yet"}</h1><p>{hasPublishedResults ? `${thisWeek.scores.at(-1)} points. Another brilliant round.` : "Publish the first Friday scores to start the league."}</p></div></section>
-            <section className="latest-panel"><span>LATEST SCORES</span>{latestScores.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{team.name}<b>{hasPublishedResults ? team.scores.at(-1) : "-"}</b></div>)}</section>
+            <section className="winner-panel"><img src="/assets/champion-trophy.png" alt="Golden quiz league trophy" /><div><span>THIS WEEK’S WINNER</span><h1>{hasPublishedResults && thisWeek ? thisWeek.name : "No result yet"}</h1><p>{hasPublishedResults && thisWeek ? `${thisWeek.latestScore} points. Another brilliant round.` : "Publish the first Friday scores to start the league."}</p></div></section>
+            <section className="latest-panel"><span>LATEST SCORES</span>{latestScores.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{team.name}<b className={team.latestScore === undefined && hasPublishedResults ? "not-entered" : ""}>{hasPublishedResults ? team.latestScore ?? "Not entered" : "-"}</b></div>)}</section>
             {teacher && selectedBoardId === "class" && <button className="add-results" onClick={() => { setEntryClassId(selectedClass?.id); setDraftScores(createScoreDraft(displayedLeague)); setShowEntry(true); }}><span aria-hidden="true">+</span>Add this week's results</button>}
           </section>
         </section></>) : <section className="league-state" aria-live="polite">Loading your class workspace...</section>
@@ -634,13 +645,17 @@ export function App() {
             <div className="admin-list">{registrationTeams.map((team, index) => <div className="team-admin-row" key={index}><i style={{ background: team.colour }} /><input value={team.name} onChange={(event) => updateRegistrationTeam(index, "name", event.target.value)} aria-label={`Team ${index + 1} name`} required /><label className="colour-picker"><span>Colour</span><input type="color" value={team.colour} onChange={(event) => updateRegistrationTeam(index, "colour", event.target.value)} aria-label={`Team ${index + 1} colour`} /></label><small>Team {index + 1}</small></div>)}</div>
             {profileError && <p role="alert">{profileError}</p>}
             <button className="save-admin" type="submit" disabled={registeringClass}>{registeringClass ? "Creating your class..." : "Create class competition"}</button>
-          </form> : teacherProfile && selectedClass ? <section className="class-dashboard">
+          </form> : teacherProfile && selectedClass && showSchoolOverview && schoolOverview ? <section className="class-dashboard school-overview">
+            <div><span className="eyebrow">SCHOOL ADMIN</span><h1>Friday Quiz overview</h1><p>{schoolOverview.totals.classes} classes · {schoolOverview.totals.teams} teams · {schoolOverview.totals.submittedClasses} classes have entered results.</p></div>
+            <section className="overview-list"><div className="overview-heading"><span>CLASS</span><span>ROSTER</span><span>RESULTS</span><span>SHARED LEAGUES</span></div>{schoolOverview.classes.map((classroom) => <div key={classroom.id}><strong>Year {classroom.yearGroup} · {classroom.name}</strong><span>{classroom.teamCount} teams</span><span>{classroom.submittedWeeks ? `${classroom.submittedWeeks} Fridays` : "Not entered"}</span><span>{classroom.participation.filter((entry) => entry.status === "active").map((entry) => entry.name).join(" · ") || "Form only"}</span></div>)}</section>
+            <div className="dashboard-actions"><button className="save-admin" onClick={() => setShowSchoolOverview(false)}>Back to my class</button></div>
+          </section> : teacherProfile && selectedClass ? <section className="class-dashboard">
             <div><span className="eyebrow">MY CLASS</span><h1>{selectedClass.name}</h1><p>Year {selectedClass.yearGroup} · {selectedClass.role === "lead" ? "Lead teacher" : "Class editor"}</p></div>
             <section className="registered-roster"><div className="roster-heading"><span className="eyebrow">TEAM ROSTER</span>{!editingRoster && <button type="button" onClick={startRosterEdit}>Edit team names</button>}</div>{selectedClass.teams.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{editingRoster ? <input value={classTeamNames[team.id] ?? team.name} onChange={(event) => setClassTeamNames((current) => ({ ...current, [team.id]: event.target.value }))} aria-label={`Team ${team.displayOrder} name`} /> : <strong>{team.name}</strong>}<small>Team {team.displayOrder}</small></div>)}{editingRoster && <div className="roster-actions"><button type="button" onClick={() => setEditingRoster(false)} disabled={savingRoster}>Cancel</button><button type="button" onClick={() => void saveClassTeamNames()} disabled={savingRoster}>{savingRoster ? "Saving..." : "Save names"}</button></div>}</section>
             <section className="league-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Choose where this class's teams should appear. Form standings are always private to this class.</p></div>{leagueOptions.filter((option) => option.eligible).map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={option.enrolmentStatus === "active"} onChange={(event) => void setLeagueParticipation(option, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
             {managedLeagueError && <p role="alert">{managedLeagueError}</p>}
             {managedLeague && <section className="class-standings"><div className="section-heading"><span>FORM STANDINGS</span><strong>{managedLeague.quizWeeks.length ? `${managedLeague.quizWeeks.length} Fridays entered` : "First Friday awaits"}</strong></div>{getStandings(managedLeague).map((team, index) => <div key={team.id} style={{ "--team-colour": team.colour } as CSSProperties}><b>{index + 1}</b><span>{team.name}</span><strong>{team.total}</strong></div>)}</section>}
-            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}<button className="save-admin" onClick={() => { setCreatingClass(true); }}>Add another class</button></div>
+            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}{schoolOverview && <button className="save-admin" onClick={() => setShowSchoolOverview(true)}>School overview</button>}<button className="save-admin" onClick={() => { setCreatingClass(true); }}>Add another class</button></div>
             {adminStatus && <p role="status">{adminStatus}</p>}
             <button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button>
           </section> : <>

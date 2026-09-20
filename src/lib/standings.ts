@@ -1,4 +1,4 @@
-import type { LeagueData, Team, TeamId } from "../types";
+import type { LeagueData, QuizWeekId, Team, TeamId } from "../types";
 
 export interface Standing extends Team {
   total: number;
@@ -15,6 +15,10 @@ export function getScoresByWeek(league: LeagueData, teamId: TeamId): number[] {
   return [...league.quizWeeks]
     .sort((left, right) => left.weekNumber - right.weekNumber)
     .map((week) => scoresByWeek.get(week.id) ?? 0);
+}
+
+export function getScoreForWeek(league: LeagueData, teamId: TeamId, quizWeekId: QuizWeekId): number | undefined {
+  return league.weeklyScores.find((score) => score.teamId === teamId && score.quizWeekId === quizWeekId)?.score;
 }
 
 export function getStandings(league: LeagueData): Standing[] {

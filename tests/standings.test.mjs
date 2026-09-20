@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCumulativeScores, getStandings } from "../src/lib/standings.ts";
+import { getCumulativeScores, getScoreForWeek, getStandings } from "../src/lib/standings.ts";
 
 const league = {
   term: { id: "term", name: "Term", startsOn: "2026-09-01", endsOn: "2026-12-18", active: true },
@@ -30,4 +30,11 @@ test("corrected scores recalculate totals and momentum", () => {
   assert.equal(standings[0].id, "second");
   assert.equal(standings[0].total, 11);
   assert.deepEqual(getCumulativeScores(standings[0].scores), [4, 11]);
+});
+
+test("a missing submission remains distinct from an actual zero score", () => {
+  const withZero = { ...league, weeklyScores: [...league.weeklyScores, { id: "zero", quizWeekId: "week-2", teamId: "third", score: 0 }] };
+  assert.equal(getScoreForWeek(withZero, "second", "week-2"), 5);
+  assert.equal(getScoreForWeek(withZero, "third", "week-2"), 0);
+  assert.equal(getScoreForWeek(withZero, "third", "week-1"), undefined);
 });

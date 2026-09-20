@@ -12,7 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "node scripts/seed-db.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
-    "test:standings": "node --test tests/standings.test.mjs"
+    "test:standings": "node --test tests/standings.test.mjs tests/class-membership.test.mjs"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.22.0",
