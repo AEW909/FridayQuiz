@@ -153,6 +153,9 @@ export function App() {
   const [selectedBoardId, setSelectedBoardId] = useState<string>("class");
   const [sharedBoard, setSharedBoard] = useState<LeagueData>();
   const [sharedBoardError, setSharedBoardError] = useState<string>();
+  const [editingRoster, setEditingRoster] = useState(false);
+  const [classTeamNames, setClassTeamNames] = useState<Record<string, string>>({});
+  const [savingRoster, setSavingRoster] = useState(false);
 
   useEffect(() => {
     void getSignedInTeacher().then(setTeacher).catch(() => setAuthError("Microsoft sign-in could not be restored."));
@@ -294,6 +297,39 @@ export function App() {
       setLeagueOptions((current) => current.map((item) => item.id === option.id ? { ...item, enrolmentStatus: participating ? "active" : "withdrawn" } : item));
       setAdminStatus(`${option.name} participation updated.`);
     } catch (error) { setAdminStatus(error instanceof Error ? error.message : "Could not update league participation."); }
+  }
+
+  function startRosterEdit() {
+    if (!selectedClass) return;
+    setClassTeamNames(Object.fromEntries(selectedClass.teams.map((team) => [team.id, team.name])));
+    setAdminStatus(undefined);
+    setEditingRoster(true);
+  }
+
+  async function saveClassTeamNames() {
+    if (!selectedClass) return;
+    try {
+      setSavingRoster(true);
+      setAdminStatus(undefined);
+      const token = await getTeacherAccessToken();
+      const response = await fetch("/api/teams", {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          classId: selectedClass.id,
+          teams: selectedClass.teams.map((team) => ({ ...team, name: classTeamNames[team.id] ?? team.name, active: true })),
+        }),
+      });
+      const payload = await response.json() as { error?: string; teams?: PersistedTeam[] };
+      if (!response.ok || !payload.teams) throw new Error(payload.error ?? "Could not save team names.");
+      const updatedClass = { ...selectedClass, teams: payload.teams };
+      setTeacherProfile((current) => current ? { ...current, classes: current.classes.map((classroom) => classroom.id === updatedClass.id ? updatedClass : classroom) } : current);
+      await loadManagedLeague(updatedClass);
+      setEditingRoster(false);
+      setAdminStatus("Team names saved.");
+    } catch (error) {
+      setAdminStatus(error instanceof Error ? error.message : "Could not save team names.");
+    } finally { setSavingRoster(false); }
   }
 
   function updateTeamName(teamId: TeamId, name: string) {
@@ -562,7 +598,7 @@ export function App() {
       </header>
 
       {view === "league" ? (
-        showingManagedClass ? (managedLeagueError ? <section className="league-state" role="alert">{managedLeagueError} Refresh the page to try again.</section> : selectedBoardId === "class" && !managedLeague ? <section className="league-state" aria-live="polite">Loading your class competition...</section> : selectedBoardId !== "class" && !sharedBoard && !sharedBoardError ? <section className="league-state" aria-live="polite">Loading this league...</section> : sharedBoardError ? <section className="league-state" role="alert">{sharedBoardError}</section> : <><div className="board-selector"><label htmlFor="league-board">Leaderboard</label><select id="league-board" value={selectedBoardId} onChange={(event) => setSelectedBoardId(event.target.value)}><option value="class">My class: {selectedClass?.name}</option>{leagueOptions.map((option) => <option key={option.id} value={option.id}>{option.name}{option.eligible && option.enrolmentStatus !== "active" ? " (not entered)" : ""}</option>)}</select></div><section className="league-layout">
+        showingManagedClass ? (managedLeagueError ? <section className="league-state" role="alert">{managedLeagueError} Refresh the page to try again.</section> : selectedBoardId === "class" && !managedLeague ? <section className="league-state" aria-live="polite">Loading your class competition...</section> : selectedBoardId !== "class" && !sharedBoard && !sharedBoardError ? <section className="league-state" aria-live="polite">Loading this league...</section> : sharedBoardError ? <section className="league-state" role="alert">{sharedBoardError}</section> : <><div className="board-selector"><label htmlFor="league-board">Leaderboard</label><select id="league-board" value={selectedBoardId} onChange={(event) => setSelectedBoardId(event.target.value)}><option value="class">My class: {selectedClass?.name}</option>{leagueOptions.filter((option) => option.enrolmentStatus === "active").map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div><section className="league-layout">
           <section className="standings-panel scoreboard-panel">
             <div className="section-heading"><span>TERM STANDINGS</span><strong>{hasPublishedResults ? `${winner.name} lead by ${winner.total - standings[1].total}` : "First Friday awaits"}</strong></div>
             <div className="column-labels"><span>RANK</span><span>TEAM</span><span>TOTAL POINTS</span></div>
@@ -600,7 +636,7 @@ export function App() {
             <button className="save-admin" type="submit" disabled={registeringClass}>{registeringClass ? "Creating your class..." : "Create class competition"}</button>
           </form> : teacherProfile && selectedClass ? <section className="class-dashboard">
             <div><span className="eyebrow">MY CLASS</span><h1>{selectedClass.name}</h1><p>Year {selectedClass.yearGroup} · {selectedClass.role === "lead" ? "Lead teacher" : "Class editor"}</p></div>
-            <section className="registered-roster"><span className="eyebrow">TEAM ROSTER</span>{selectedClass.teams.map((team) => <div key={team.id}><i style={{ background: team.colour }} /> <strong>{team.name}</strong><small>Team {team.displayOrder}</small></div>)}</section>
+            <section className="registered-roster"><div className="roster-heading"><span className="eyebrow">TEAM ROSTER</span>{!editingRoster && <button type="button" onClick={startRosterEdit}>Edit team names</button>}</div>{selectedClass.teams.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{editingRoster ? <input value={classTeamNames[team.id] ?? team.name} onChange={(event) => setClassTeamNames((current) => ({ ...current, [team.id]: event.target.value }))} aria-label={`Team ${team.displayOrder} name`} /> : <strong>{team.name}</strong>}<small>Team {team.displayOrder}</small></div>)}{editingRoster && <div className="roster-actions"><button type="button" onClick={() => setEditingRoster(false)} disabled={savingRoster}>Cancel</button><button type="button" onClick={() => void saveClassTeamNames()} disabled={savingRoster}>{savingRoster ? "Saving..." : "Save names"}</button></div>}</section>
             <section className="league-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Choose where this class's teams should appear. Form standings are always private to this class.</p></div>{leagueOptions.filter((option) => option.eligible).map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={option.enrolmentStatus === "active"} onChange={(event) => void setLeagueParticipation(option, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
             {managedLeagueError && <p role="alert">{managedLeagueError}</p>}
             {managedLeague && <section className="class-standings"><div className="section-heading"><span>FORM STANDINGS</span><strong>{managedLeague.quizWeeks.length ? `${managedLeague.quizWeeks.length} Fridays entered` : "First Friday awaits"}</strong></div>{getStandings(managedLeague).map((team, index) => <div key={team.id} style={{ "--team-colour": team.colour } as CSSProperties}><b>{index + 1}</b><span>{team.name}</span><strong>{team.total}</strong></div>)}</section>}

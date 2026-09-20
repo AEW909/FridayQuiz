@@ -78,10 +78,15 @@ i { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; box-shadow: 
 .registration-details label { display: grid; gap: 7px; color: #b8caef; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 select { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid #456e9f; background: #071a36; color: #fff; }
 .registered-roster { border: 1px solid #41699d; background: rgba(4, 15, 34, .78); }
-.registered-roster > span { display: block; padding: 18px 20px 10px; }
+.registered-roster .roster-heading { display: flex; grid-template-columns: none; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px 10px; }
+.roster-heading button, .roster-actions button { border: 1px solid #4b94df; background: rgba(5, 35, 83, .82); color: #dceeff; padding: 7px 11px; box-shadow: inset 0 1px 0 rgba(198, 236, 255, .14); font-family: 'Barlow Condensed', Impact, sans-serif; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; }
+.roster-heading button:hover, .roster-actions button:hover { border-color: #86d3ff; background: rgba(11, 62, 136, .98); }
 .registered-roster div { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid #26456f; color: #edf3ff; }
 .registered-roster i { width: 10px; height: 26px; }
 .registered-roster small { color: #b8caef; }
+.registered-roster input { min-width: 0; padding: 8px 10px; }
+.registered-roster .roster-actions { display: flex; justify-content: flex-end; grid-template-columns: none; padding-block: 12px; }
+.roster-actions button:last-child { border-color: #47b8ff; background: rgba(5, 54, 116, .94); color: #fff; }
 .dashboard-next { margin: 0; }
 .dashboard-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .dashboard-actions .save-admin { float: none; margin: 0; }
