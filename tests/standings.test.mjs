@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCumulativeScores, getScoreForWeek, getStandings } from "../src/lib/standings.ts";
+import { getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners } from "../src/lib/standings.ts";
 
 const league = {
   term: { id: "term", name: "Term", startsOn: "2026-09-01", endsOn: "2026-12-18", active: true },
@@ -22,6 +22,13 @@ const league = {
 
 test("ties retain configured display order", () => {
   assert.deepEqual(getStandings(league).map((team) => team.id), ["first", "second"]);
+  assert.deepEqual(getTermLeaders(getStandings(league)).map((team) => team.id), ["first", "second"]);
+  assert.deepEqual(getWeekWinners(league, "week-2").map((team) => team.id), ["second"]);
+});
+
+test("weekly ties return every winning team", () => {
+  const tied = { ...league, weeklyScores: league.weeklyScores.map((score) => score.id === "second-2" ? { ...score, score: 4 } : score) };
+  assert.deepEqual(getWeekWinners(tied, "week-2").map((team) => team.id), ["first", "second"]);
 });
 
 test("corrected scores recalculate totals and momentum", () => {

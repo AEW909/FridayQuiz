@@ -8,7 +8,7 @@ import {
   signOutFromMicrosoft,
   type TeacherIdentity,
 } from "./auth/microsoft";
-import { getCumulativeScores, getScoreForWeek, getStandings, type Standing } from "./lib/standings";
+import { getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners, type Standing } from "./lib/standings";
 import type { LeagueData, TeamId } from "./types";
 
 type View = "league" | "admin";
@@ -19,7 +19,6 @@ type ManagedClass = { id: string; name: string; yearGroup: number; role: "lead" 
 type TeacherProfile = { teacher: { id: string; displayName: string; email: string | null }; classes: ManagedClass[]; needsRegistration: boolean };
 type RegistrationTeam = { name: string; colour: string };
 type LeagueOption = { id: string; name: string; scope: "year_group" | "phase" | "whole_school"; yearGroup: number | null; phase: string | null; eligible: boolean; enrolmentStatus: "active" | "withdrawn" | null };
-type SchoolOverview = { totals: { classes: number; teams: number; submittedClasses: number }; classes: Array<{ id: string; name: string; yearGroup: number; leadTeacher: string | null; teamCount: number; submittedWeeks: number; lastSubmittedOn: string | null; participation: Array<{ name: string; status: "active" | "withdrawn" | "paused" }> }> };
 
 const teamColours = ["#f7c948", "#47d990", "#ff626f", "#42a8ff", "#b68cff", "#35d7df", "#fb923c", "#d946ef", "#a3e635", "#f472b6"];
 
@@ -55,13 +54,14 @@ function mostRecentFriday() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function MomentumChart({ teams }: { teams: Standing[] }) {
+function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
+    const chart = context;
 
     const { width, height } = canvas;
     const padding = { left: 48, right: 26, top: 18, bottom: 34 };
@@ -70,49 +70,68 @@ function MomentumChart({ teams }: { teams: Standing[] }) {
     const usableWidth = width - padding.left - padding.right;
     const usableHeight = height - padding.top - padding.bottom;
 
-    context.clearRect(0, 0, width, height);
-    context.strokeStyle = "rgba(153, 183, 255, .16)";
-    context.lineWidth = 1;
-    context.font = "12px Inter, sans-serif";
-    context.fillStyle = "#9fb1d9";
-
-    for (let index = 0; index <= 5; index += 1) {
-      const y = padding.top + (usableHeight * index) / 5;
-      context.beginPath();
-      context.moveTo(padding.left, y);
-      context.lineTo(width - padding.right, y);
-      context.stroke();
-      context.fillText(String(max - (max * index) / 5), 2, y + 4);
-    }
-
-    teams.forEach((team, index) => {
-      context.beginPath();
-      context.strokeStyle = team.colour;
-      context.lineWidth = 3;
-      totals[index].forEach((value, weekIndex) => {
-        const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
-        const y = padding.top + usableHeight - (value / max) * usableHeight;
-        if (weekIndex === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      });
-      context.stroke();
-
-      totals[index].forEach((value, weekIndex) => {
-        const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
-        const y = padding.top + usableHeight - (value / max) * usableHeight;
-        context.beginPath();
-        context.fillStyle = team.colour;
-        context.arc(x, y, 4, 0, Math.PI * 2);
-        context.fill();
-      });
-    });
-
     const weekCount = totals[0]?.length ?? 0;
-    for (let index = 0; index < weekCount; index += 1) {
-      const x = padding.left + (usableWidth * index) / Math.max(weekCount - 1, 1);
-      context.fillText(`W${index + 1}`, x - 9, height - 9);
+    function draw(progress: number) {
+      chart.clearRect(0, 0, width, height);
+      chart.strokeStyle = "rgba(153, 183, 255, .16)";
+      chart.lineWidth = 1;
+      chart.font = "12px Inter, sans-serif";
+      chart.fillStyle = "#9fb1d9";
+
+      for (let index = 0; index <= 5; index += 1) {
+        const y = padding.top + (usableHeight * index) / 5;
+        chart.beginPath();
+        chart.moveTo(padding.left, y);
+        chart.lineTo(width - padding.right, y);
+        chart.stroke();
+        chart.fillText(String(max - (max * index) / 5), 2, y + 4);
+      }
+
+      teams.forEach((team, index) => {
+        chart.beginPath();
+        chart.strokeStyle = team.colour;
+        chart.lineWidth = 3;
+        totals[index].forEach((value, weekIndex) => {
+          const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
+          const y = padding.top + usableHeight - ((value * progress) / max) * usableHeight;
+          if (weekIndex === 0) chart.moveTo(x, y);
+          else chart.lineTo(x, y);
+        });
+        chart.stroke();
+
+        totals[index].forEach((value, weekIndex) => {
+          if (progress < (weekIndex + 1) / Math.max(totals[index].length, 1)) return;
+          const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
+          const y = padding.top + usableHeight - ((value * progress) / max) * usableHeight;
+          chart.beginPath();
+          chart.fillStyle = team.colour;
+          chart.arc(x, y, 4, 0, Math.PI * 2);
+          chart.fill();
+        });
+      });
+
+      for (let index = 0; index < weekCount; index += 1) {
+        const x = padding.left + (usableWidth * index) / Math.max(weekCount - 1, 1);
+        chart.fillText(`W${index + 1}`, x - 9, height - 9);
+      }
     }
-  }, [teams]);
+
+    if (!revealKey || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      draw(1);
+      return;
+    }
+    const duration = 1100;
+    let frame = 0;
+    let startedAt = 0;
+    const animate = (timestamp: number) => {
+      startedAt ||= timestamp;
+      const progress = Math.min((timestamp - startedAt) / duration, 1);
+      draw(1 - Math.pow(1 - progress, 3));
+      if (progress < 1) frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [teams, revealKey]);
 
   return <canvas ref={canvasRef} width="670" height="330" aria-label="Cumulative points by week for all teams" />;
 }
@@ -157,8 +176,16 @@ export function App() {
   const [editingRoster, setEditingRoster] = useState(false);
   const [classTeamNames, setClassTeamNames] = useState<Record<string, string>>({});
   const [savingRoster, setSavingRoster] = useState(false);
-  const [schoolOverview, setSchoolOverview] = useState<SchoolOverview>();
-  const [showSchoolOverview, setShowSchoolOverview] = useState(false);
+  const [resultsRevealKey, setResultsRevealKey] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [retiringTeamId, setRetiringTeamId] = useState<string>();
+  const [retiringTeam, setRetiringTeam] = useState(false);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   useEffect(() => {
     void getSignedInTeacher().then(setTeacher).catch(() => setAuthError("Microsoft sign-in could not be restored."));
@@ -172,9 +199,6 @@ export function App() {
       const payload = await response.json() as TeacherProfile & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not load your class profile.");
       setTeacherProfile(payload);
-      const overviewResponse = await fetch("/api/admin-overview", { headers: { Authorization: `Bearer ${token}` } });
-      if (overviewResponse.ok) setSchoolOverview(await overviewResponse.json() as SchoolOverview);
-      else setSchoolOverview(undefined);
       if (!payload.needsRegistration && payload.classes.length === 1) {
         setSelectedClassId(payload.classes[0].id);
         setView("league");
@@ -199,8 +223,6 @@ export function App() {
       setProfileState("idle");
       setSelectedClassId(undefined);
       setManagedLeague(undefined);
-      setSchoolOverview(undefined);
-      setShowSchoolOverview(false);
     }
   }, [teacher, loadTeacherProfile]);
 
@@ -289,13 +311,27 @@ export function App() {
   const standings = useMemo(() => getStandings(displayedLeague), [displayedLeague]);
   const standingsScrolls = standings.length > 6;
   const winner = standings[0];
+  const termLeaders = getTermLeaders(standings);
   const latestWeek = [...displayedLeague.quizWeeks].sort((left, right) => right.weekNumber - left.weekNumber)[0];
   const latestScores = standings
     .map((team) => ({ ...team, latestScore: latestWeek ? getScoreForWeek(displayedLeague, team.id, latestWeek.id) : undefined }))
     .sort((left, right) => (right.latestScore ?? -1) - (left.latestScore ?? -1) || left.displayOrder - right.displayOrder);
-  const thisWeek = latestScores.find((team) => team.latestScore !== undefined) ?? latestScores[0];
+  const weeklyWinners = latestWeek ? getWeekWinners(displayedLeague, latestWeek.id) : [];
+  const weeklyWinningScore = weeklyWinners[0]?.score;
   const hasPublishedResults = displayedLeague.quizWeeks.length > 0;
   const entryLeague = entryClassId ? managedLeague : league;
+  const termLeadLabel = !hasPublishedResults || !winner ? "First Friday awaits"
+    : termLeaders.length === 1 ? `${winner.name} lead by ${winner.total - (standings[1]?.total ?? 0)}`
+      : termLeaders.length === 2 ? `${termLeaders.map((team) => team.name).join(" & ")} share the lead`
+        : `${termLeaders.length} teams share the lead`;
+  const weeklyWinnerLabel = weeklyWinners.length === 0 ? "No result yet"
+    : weeklyWinners.length === 1 ? weeklyWinners[0].name
+      : weeklyWinners.length === 2 ? weeklyWinners.map((team) => team.name).join(" & ")
+        : "Too close to call";
+  const weeklyWinnerDescription = weeklyWinners.length === 0 ? "Publish the first Friday scores to start the league."
+    : weeklyWinners.length === 1 ? `${weeklyWinningScore} points. Another brilliant round.`
+      : weeklyWinners.length === 2 ? `Joint winners on ${weeklyWinningScore} points.`
+        : `${weeklyWinners.length} teams are tied on ${weeklyWinningScore} points.`;
 
   async function setLeagueParticipation(option: LeagueOption, participating: boolean) {
     if (!selectedClass) return;
@@ -341,6 +377,37 @@ export function App() {
     } catch (error) {
       setAdminStatus(error instanceof Error ? error.message : "Could not save team names.");
     } finally { setSavingRoster(false); }
+  }
+
+  async function retireClassTeam(teamId: string) {
+    if (!selectedClass) return;
+    try {
+      setRetiringTeam(true);
+      setAdminStatus(undefined);
+      const token = await getTeacherAccessToken();
+      const response = await fetch(`/api/teams?classId=${encodeURIComponent(selectedClass.id)}&teamId=${encodeURIComponent(teamId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json() as { error?: string; teams?: PersistedTeam[] };
+      if (!response.ok || !payload.teams) throw new Error(payload.error ?? "Could not retire that team.");
+      const updatedClass = { ...selectedClass, teams: payload.teams };
+      setTeacherProfile((current) => current ? { ...current, classes: current.classes.map((classroom) => classroom.id === updatedClass.id ? updatedClass : classroom) } : current);
+      await loadManagedLeague(updatedClass);
+      setRetiringTeamId(undefined);
+      setAdminStatus("Team retired from active tables and momentum.");
+    } catch (error) {
+      setAdminStatus(error instanceof Error ? error.message : "Could not retire that team.");
+    } finally { setRetiringTeam(false); }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      setAdminStatus("Fullscreen is not available in this browser.");
+    }
   }
 
   function updateTeamName(teamId: TeamId, name: string) {
@@ -500,13 +567,14 @@ export function App() {
         }));
         await refreshLeague();
       }
+      setResultsRevealKey((current) => current + 1);
       setSaved(true);
       window.setTimeout(() => {
         setShowEntry(false);
         setSaved(false);
         setDraftScores(createScoreDraft(scoreLeague));
         setEntryClassId(undefined);
-      }, 700);
+      }, 1500);
     } catch (error) {
       setScoreError(error instanceof Error ? error.message : "Could not publish results.");
     } finally {
@@ -578,7 +646,7 @@ export function App() {
   }
 
   if (!teacher) {
-    return <main className="app-shell auth-shell"><section className="auth-gate"><div className="brand"><img src="/assets/champion-trophy.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div><span className="eyebrow">LRGS STAFF ACCESS</span><h1>Run your Friday quiz league.</h1><p>Sign in with your school Microsoft account to set up classes, enter results, and follow every leaderboard you teach.</p>{authError && <p role="alert">{authError}</p>}{isMicrosoftConfigured() && <button className="save-admin" onClick={() => void signIn()}>Sign in with Microsoft</button>}</section></main>;
+    return <main className="app-shell auth-shell"><section className="auth-gate"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div><span className="eyebrow">LRGS STAFF ACCESS</span><h1>Run your Friday quiz league.</h1><p>Sign in with your school Microsoft account to set up classes, enter results, and follow every leaderboard you teach.</p>{authError && <p role="alert">{authError}</p>}{isMicrosoftConfigured() && <button className="save-admin" onClick={() => void signIn()}>Sign in with Microsoft</button>}</section></main>;
   }
 
   if (profileState === "loading" || profileState === "idle") {
@@ -590,14 +658,14 @@ export function App() {
   }
 
   if (teacherProfile && teacherProfile.classes.length > 1 && !selectedClass && !creatingClass) {
-    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/champion-trophy.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={() => { setCreatingClass(true); setView("admin"); }}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
+    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={() => { setCreatingClass(true); setView("admin"); }}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
   }
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <img src="/assets/champion-trophy.png" alt="" />
+          <img src="/assets/lrgs-quiz-crest.png" alt="" />
           <div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div>
         </div>
         <nav aria-label="Primary navigation">
@@ -605,17 +673,17 @@ export function App() {
           <button className={view === "admin" ? "active" : ""} onClick={() => setView("admin")}>Admin</button>
           {teacherProfile && teacherProfile.classes.length > 1 && <button onClick={() => setSelectedClassId(undefined)}>Change class</button>}
         </nav>
-        <p className="term-label">{selectedBoardId === "class" && selectedClass ? `${selectedClass.name.toUpperCase()} · YEAR ${selectedClass.yearGroup}` : leagueOptions.find((option) => option.id === selectedBoardId)?.name.toUpperCase() ?? league.term.name.toUpperCase()}<br /><strong>{displayedLeague.teams.length} TEAMS · {displayedLeague.quizWeeks.length} WEEKS</strong></p>
+        <div className="topbar-actions"><button type="button" className="fullscreen-control" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}><span aria-hidden="true">⛶</span></button><p className="term-label">{selectedBoardId === "class" && selectedClass ? `${selectedClass.name.toUpperCase()} · YEAR ${selectedClass.yearGroup}` : leagueOptions.find((option) => option.id === selectedBoardId)?.name.toUpperCase() ?? league.term.name.toUpperCase()}<br /><strong>{displayedLeague.teams.length} TEAMS · {displayedLeague.quizWeeks.length} WEEKS</strong></p></div>
       </header>
 
       {view === "league" ? (
         showingManagedClass ? (managedLeagueError ? <section className="league-state" role="alert">{managedLeagueError} Refresh the page to try again.</section> : selectedBoardId === "class" && !managedLeague ? <section className="league-state" aria-live="polite">Loading your class competition...</section> : selectedBoardId !== "class" && !sharedBoard && !sharedBoardError ? <section className="league-state" aria-live="polite">Loading this league...</section> : sharedBoardError ? <section className="league-state" role="alert">{sharedBoardError}</section> : <><div className="board-selector"><label htmlFor="league-board">Leaderboard</label><select id="league-board" value={selectedBoardId} onChange={(event) => setSelectedBoardId(event.target.value)}><option value="class">My class: {selectedClass?.name}</option>{leagueOptions.filter((option) => option.enrolmentStatus === "active").map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div><section className="league-layout">
           <section className="standings-panel scoreboard-panel">
-            <div className="section-heading"><span>TERM STANDINGS</span><strong>{hasPublishedResults ? `${winner.name} lead by ${winner.total - standings[1].total}` : "First Friday awaits"}</strong></div>
+            <div className="section-heading"><span>TERM STANDINGS</span><strong>{termLeadLabel}</strong></div>
             <div className="column-labels"><span>RANK</span><span>TEAM</span><span>TOTAL POINTS</span></div>
             <div className={`team-list ${standingsScrolls ? "scrollable" : ""}`} role={standingsScrolls ? "region" : undefined} aria-label={standingsScrolls ? `Term standings, ${standings.length} teams. Scroll to view more teams.` : undefined} tabIndex={standingsScrolls ? 0 : undefined}>
               {standings.map((team, index) => (
-                <article className={`team-row ${index === 0 ? "first" : ""}`} key={team.id} style={{ "--team-colour": team.colour } as CSSProperties}>
+                <article className={`team-row ${index === 0 ? "first" : ""} ${resultsRevealKey ? "results-reveal" : ""}`} key={`${team.id}-${resultsRevealKey}`} style={{ "--team-colour": team.colour, "--reveal-delay": `${index * 85}ms` } as CSSProperties}>
                   <strong className="rank" aria-label={`Rank ${index + 1}`}>{index + 1}</strong><span className="colour-bar" aria-hidden="true" />
                   <div><h2>{team.name}</h2><p>{index === 0 ? "SETTING THE PACE" : index === 1 ? "CLOSING THE GAP" : "STILL IN THE HUNT"}</p></div>
                   <b>{team.total}</b>
@@ -623,9 +691,9 @@ export function App() {
               ))}
             </div>
           </section>
-          <section className="chart-panel scoreboard-panel"><div className="section-heading"><span>TEAM MOMENTUM</span><strong>Cumulative points by week</strong></div><MomentumChart teams={standings} /><div className="legend">{standings.map((team) => <span key={team.id}><i style={{ background: team.colour }} />{team.name}</span>)}</div></section>
+          <section className="chart-panel scoreboard-panel"><div className="section-heading"><span>TEAM MOMENTUM</span><strong>Cumulative points by week</strong></div><MomentumChart teams={standings} revealKey={resultsRevealKey} /><div className="legend">{standings.map((team) => <span key={team.id}><i style={{ background: team.colour }} />{team.name}</span>)}</div></section>
           <section className={teacher ? "league-bottom with-action" : "league-bottom"}>
-            <section className="winner-panel"><img src="/assets/champion-trophy.png" alt="Golden quiz league trophy" /><div><span>THIS WEEK’S WINNER</span><h1>{hasPublishedResults && thisWeek ? thisWeek.name : "No result yet"}</h1><p>{hasPublishedResults && thisWeek ? `${thisWeek.latestScore} points. Another brilliant round.` : "Publish the first Friday scores to start the league."}</p></div></section>
+            <section className={`winner-panel ${weeklyWinners.length > 1 ? "joint-winner" : ""}`}><img src="/assets/champion-trophy.png" alt="Golden quiz league trophy" /><div><span>{weeklyWinners.length > 2 ? "THIS WEEK'S RESULT" : "THIS WEEK'S WINNER"}</span><h1>{weeklyWinnerLabel}</h1><p>{weeklyWinnerDescription}</p></div></section>
             <section className="latest-panel"><span>LATEST SCORES</span>{latestScores.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{team.name}<b className={team.latestScore === undefined && hasPublishedResults ? "not-entered" : ""}>{hasPublishedResults ? team.latestScore ?? "Not entered" : "-"}</b></div>)}</section>
             {teacher && selectedBoardId === "class" && <button className="add-results" onClick={() => { setEntryClassId(selectedClass?.id); setDraftScores(createScoreDraft(displayedLeague)); setShowEntry(true); }}><span aria-hidden="true">+</span>Add this week's results</button>}
           </section>
@@ -645,17 +713,13 @@ export function App() {
             <div className="admin-list">{registrationTeams.map((team, index) => <div className="team-admin-row" key={index}><i style={{ background: team.colour }} /><input value={team.name} onChange={(event) => updateRegistrationTeam(index, "name", event.target.value)} aria-label={`Team ${index + 1} name`} required /><label className="colour-picker"><span>Colour</span><input type="color" value={team.colour} onChange={(event) => updateRegistrationTeam(index, "colour", event.target.value)} aria-label={`Team ${index + 1} colour`} /></label><small>Team {index + 1}</small></div>)}</div>
             {profileError && <p role="alert">{profileError}</p>}
             <button className="save-admin" type="submit" disabled={registeringClass}>{registeringClass ? "Creating your class..." : "Create class competition"}</button>
-          </form> : teacherProfile && selectedClass && showSchoolOverview && schoolOverview ? <section className="class-dashboard school-overview">
-            <div><span className="eyebrow">SCHOOL ADMIN</span><h1>Friday Quiz overview</h1><p>{schoolOverview.totals.classes} classes · {schoolOverview.totals.teams} teams · {schoolOverview.totals.submittedClasses} classes have entered results.</p></div>
-            <section className="overview-list"><div className="overview-heading"><span>CLASS</span><span>ROSTER</span><span>RESULTS</span><span>SHARED LEAGUES</span></div>{schoolOverview.classes.map((classroom) => <div key={classroom.id}><strong>Year {classroom.yearGroup} · {classroom.name}</strong><span>{classroom.teamCount} teams</span><span>{classroom.submittedWeeks ? `${classroom.submittedWeeks} Fridays` : "Not entered"}</span><span>{classroom.participation.filter((entry) => entry.status === "active").map((entry) => entry.name).join(" · ") || "Form only"}</span></div>)}</section>
-            <div className="dashboard-actions"><button className="save-admin" onClick={() => setShowSchoolOverview(false)}>Back to my class</button></div>
-          </section> : teacherProfile && selectedClass ? <section className="class-dashboard">
+          </form> : teacherProfile && selectedClass ? <section className="class-dashboard">
             <div><span className="eyebrow">MY CLASS</span><h1>{selectedClass.name}</h1><p>Year {selectedClass.yearGroup} · {selectedClass.role === "lead" ? "Lead teacher" : "Class editor"}</p></div>
-            <section className="registered-roster"><div className="roster-heading"><span className="eyebrow">TEAM ROSTER</span>{!editingRoster && <button type="button" onClick={startRosterEdit}>Edit team names</button>}</div>{selectedClass.teams.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{editingRoster ? <input value={classTeamNames[team.id] ?? team.name} onChange={(event) => setClassTeamNames((current) => ({ ...current, [team.id]: event.target.value }))} aria-label={`Team ${team.displayOrder} name`} /> : <strong>{team.name}</strong>}<small>Team {team.displayOrder}</small></div>)}{editingRoster && <div className="roster-actions"><button type="button" onClick={() => setEditingRoster(false)} disabled={savingRoster}>Cancel</button><button type="button" onClick={() => void saveClassTeamNames()} disabled={savingRoster}>{savingRoster ? "Saving..." : "Save names"}</button></div>}</section>
+            <section className="registered-roster"><div className="roster-heading"><span className="eyebrow">TEAM ROSTER</span>{!editingRoster && <button type="button" onClick={startRosterEdit}>Edit team names</button>}</div>{selectedClass.teams.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{editingRoster ? <input value={classTeamNames[team.id] ?? team.name} onChange={(event) => setClassTeamNames((current) => ({ ...current, [team.id]: event.target.value }))} aria-label={`Team ${team.displayOrder} name`} /> : <strong>{team.name}</strong>}<small>Team {team.displayOrder}</small>{!editingRoster && <button type="button" className="retire-team" onClick={() => setRetiringTeamId(team.id)} disabled={selectedClass.teams.length <= 2} aria-label={`Retire ${team.name}`} title="Retire team from active leaderboards">×</button>}</div>)}{editingRoster && <div className="roster-actions"><button type="button" onClick={() => setEditingRoster(false)} disabled={savingRoster}>Cancel</button><button type="button" onClick={() => void saveClassTeamNames()} disabled={savingRoster}>{savingRoster ? "Saving..." : "Save names"}</button></div>}{retiringTeamId && <div className="retire-confirm" role="alert"><p><strong>Retire {selectedClass.teams.find((team) => team.id === retiringTeamId)?.name}?</strong> Its existing scores stay in the database, but it will disappear from active standings, charts and future score entry.</p><div><button type="button" onClick={() => setRetiringTeamId(undefined)} disabled={retiringTeam}>Cancel</button><button type="button" onClick={() => void retireClassTeam(retiringTeamId)} disabled={retiringTeam}>{retiringTeam ? "Retiring..." : "Retire team"}</button></div></div>}</section>
             <section className="league-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Choose where this class's teams should appear. Form standings are always private to this class.</p></div>{leagueOptions.filter((option) => option.eligible).map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={option.enrolmentStatus === "active"} onChange={(event) => void setLeagueParticipation(option, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
             {managedLeagueError && <p role="alert">{managedLeagueError}</p>}
             {managedLeague && <section className="class-standings"><div className="section-heading"><span>FORM STANDINGS</span><strong>{managedLeague.quizWeeks.length ? `${managedLeague.quizWeeks.length} Fridays entered` : "First Friday awaits"}</strong></div>{getStandings(managedLeague).map((team, index) => <div key={team.id} style={{ "--team-colour": team.colour } as CSSProperties}><b>{index + 1}</b><span>{team.name}</span><strong>{team.total}</strong></div>)}</section>}
-            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}{schoolOverview && <button className="save-admin" onClick={() => setShowSchoolOverview(true)}>School overview</button>}<button className="save-admin" onClick={() => { setCreatingClass(true); }}>Add another class</button></div>
+            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}<button className="save-admin" onClick={() => { setCreatingClass(true); }}>Add another class</button></div>
             {adminStatus && <p role="status">{adminStatus}</p>}
             <button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button>
           </section> : <>
@@ -670,7 +734,7 @@ export function App() {
         </section>
       )}
 
-      {showEntry && entryLeague && <div className="modal-backdrop" role="presentation"><form className="score-modal" onSubmit={(event) => void submitResults(event)}><button type="button" className="close" onClick={() => { setShowEntry(false); setEntryClassId(undefined); }} aria-label="Close score entry">Close</button><span className="eyebrow">PUBLISH RESULTS</span><h1>Enter Friday's results</h1><p>Each team gets one score. Publishing updates the league table and momentum chart straight away.</p><div className="score-grid">{entryLeague.teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`score-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, -1)} aria-label={`Decrease ${team.name} score`}>-</button><input id={`score-${team.id}`} aria-label={`${team.name} score`} type="number" min="0" step="1" value={draftScores[team.id]} onChange={(event) => setDraftScores({ ...draftScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, 1)} aria-label={`Increase ${team.name} score`}>+</button></div></div>)}</div>{scoreError && <p role="alert">{scoreError}</p>}<button className="save-results" type="submit" disabled={savingResults}>{saved ? "Results saved" : savingResults ? "Publishing results..." : "Publish results"}</button></form></div>}
+      {showEntry && entryLeague && <div className="modal-backdrop" role="presentation"><form className={`score-modal ${saved ? "results-published" : ""}`} onSubmit={(event) => void submitResults(event)}><button type="button" className="close" onClick={() => { setShowEntry(false); setEntryClassId(undefined); }} aria-label="Close score entry">Close</button><span className="eyebrow">PUBLISH RESULTS</span><h1>{saved ? "Results are live" : "Enter Friday's results"}</h1><p>{saved ? "The scoreboard is redrawing now." : "Each team gets one score. Publishing updates the league table and momentum chart straight away."}</p><div className="score-grid">{entryLeague.teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`score-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, -1)} aria-label={`Decrease ${team.name} score`}>-</button><input id={`score-${team.id}`} aria-label={`${team.name} score`} type="number" min="0" step="1" value={draftScores[team.id]} onChange={(event) => setDraftScores({ ...draftScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, 1)} aria-label={`Increase ${team.name} score`}>+</button></div></div>)}</div>{scoreError && <p role="alert">{scoreError}</p>}<button className="save-results" type="submit" disabled={savingResults || saved}>{saved ? "Scoreboard live" : savingResults ? "Publishing results..." : "Publish results"}</button></form></div>}
       {showCorrectionPicker && managedLeague && selectedClass && <div className="modal-backdrop" role="presentation"><section className="class-picker correction-picker" role="dialog" aria-modal="true" aria-labelledby="correction-picker-title"><button type="button" className="close" onClick={() => setShowCorrectionPicker(false)} aria-label="Close result selection">Close</button><span className="eyebrow">CORRECT RESULTS</span><h1 id="correction-picker-title">Choose a Friday</h1><div>{[...managedLeague.quizWeeks].sort((left, right) => right.quizDate.localeCompare(left.quizDate)).map((week) => <button key={week.id} type="button" onClick={() => { setShowCorrectionPicker(false); openCorrection(week.id, managedLeague, selectedClass.id); }}><span>Week {week.weekNumber}</span><strong>{week.quizDate}</strong><small>Open score correction</small></button>)}</div></section></div>}
       {correctionWeekId && (correctionClassId ? managedLeague : league) && <div className="modal-backdrop" role="presentation"><form className="score-modal" onSubmit={(event) => void submitCorrection(event)}><button type="button" className="close" onClick={() => { setCorrectionWeekId(undefined); setCorrectionClassId(undefined); }} aria-label="Close correction">Close</button><span className="eyebrow">CORRECT RESULTS</span><h1>Correct a published Friday</h1><p>Changed scores are recorded with your identity, the previous value, and the reason below.</p><div className="score-grid">{(correctionClassId ? managedLeague! : league).teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`correction-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(correctionScores, setCorrectionScores, team.id, -1)} aria-label={`Decrease ${team.name} corrected score`}>-</button><input id={`correction-${team.id}`} aria-label={`${team.name} corrected score`} type="number" min="0" step="1" value={correctionScores[team.id] ?? ""} onChange={(event) => setCorrectionScores({ ...correctionScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(correctionScores, setCorrectionScores, team.id, 1)} aria-label={`Increase ${team.name} corrected score`}>+</button></div></div>)}</div><label className="correction-reason"><span>Reason for correction</span><textarea value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} required /></label><label className="confirmation"><input type="checkbox" checked={correctionConfirmed} onChange={(event) => setCorrectionConfirmed(event.target.checked)} />I confirm these corrected results should replace the published scores.</label>{correctionError && <p role="alert">{correctionError}</p>}<button className="save-results" type="submit" disabled={correctingResults}>{correctingResults ? "Saving correction..." : "Confirm correction"}</button></form></div>}
     </main>

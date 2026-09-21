@@ -5,6 +5,10 @@ export interface Standing extends Team {
   scores: number[];
 }
 
+export interface WeekWinner extends Team {
+  score: number;
+}
+
 export function getScoresByWeek(league: LeagueData, teamId: TeamId): number[] {
   const scoresByWeek = new Map(
     league.weeklyScores
@@ -35,4 +39,18 @@ export function getCumulativeScores(scores: number[]): number[] {
     cumulative.push((cumulative.at(-1) ?? 0) + score);
     return cumulative;
   }, []);
+}
+
+export function getTermLeaders(standings: Standing[]): Standing[] {
+  const leadingScore = standings[0]?.total;
+  return leadingScore === undefined ? [] : standings.filter((team) => team.total === leadingScore);
+}
+
+export function getWeekWinners(league: LeagueData, quizWeekId: QuizWeekId): WeekWinner[] {
+  const scoredTeams = league.teams.flatMap((team) => {
+    const score = getScoreForWeek(league, team.id, quizWeekId);
+    return score === undefined ? [] : [{ ...team, score }];
+  });
+  const leadingScore = Math.max(...scoredTeams.map((team) => team.score));
+  return scoredTeams.filter((team) => team.score === leadingScore);
 }

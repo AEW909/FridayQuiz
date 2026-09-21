@@ -8,10 +8,6 @@ export interface AuthenticatedTeacher {
   groupIds: string[];
 }
 
-export function hasSchoolAdminGroup(groupIds: string[], schoolAdminGroupId: string | undefined) {
-  return Boolean(schoolAdminGroupId && groupIds.includes(schoolAdminGroupId));
-}
-
 export async function requireTeacher(request: Request): Promise<AuthenticatedTeacher> {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const tenantId = process.env.VITE_ENTRA_TENANT_ID;
@@ -38,14 +34,6 @@ export async function requireTeacher(request: Request): Promise<AuthenticatedTea
     displayName: typeof payload.name === "string" ? payload.name : "Friday Quiz teacher",
     groupIds: groups.filter((group): group is string => typeof group === "string"),
   };
-}
-
-export async function requireSchoolAdmin(request: Request) {
-  const teacher = await requireTeacher(request);
-  if (!hasSchoolAdminGroup(teacher.groupIds, process.env.ENTRA_SCHOOL_ADMIN_GROUP_ID)) {
-    throw new Error("School administrator access is required.");
-  }
-  return teacher;
 }
 
 export async function upsertTeacher(client: pg.PoolClient, teacher: AuthenticatedTeacher) {
