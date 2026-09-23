@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { requireClassMembership } from "../api/_auth.ts";
 import { canChangeTeamCount, canRetireTeam, matchesActiveRoster } from "../api/_team-roster.ts";
+import { isEligibleForYearGroup, phaseForYearGroup } from "../api/_league-eligibility.ts";
 
 function membershipClient(row) {
   return {
@@ -41,4 +42,15 @@ test("roster edits cannot revive or replace retired team identities", () => {
   assert.equal(matchesActiveRoster(["first", "second"], ["first", "retired"]), false);
   assert.equal(matchesActiveRoster(["first", "second"], ["first", "first"]), false);
   assert.equal(matchesActiveRoster(["first", "second"], ["first"]), false);
+});
+
+test("a new class can choose only its own year, phase, or whole-school boards", () => {
+  assert.equal(phaseForYearGroup(7), "lower");
+  assert.equal(phaseForYearGroup(10), "middle");
+  assert.equal(phaseForYearGroup(13), "upper");
+  assert.equal(isEligibleForYearGroup({ scope: "year_group", yearGroup: 13, phase: null }, 13), true);
+  assert.equal(isEligibleForYearGroup({ scope: "phase", yearGroup: null, phase: "upper" }, 13), true);
+  assert.equal(isEligibleForYearGroup({ scope: "whole_school", yearGroup: null, phase: null }, 13), true);
+  assert.equal(isEligibleForYearGroup({ scope: "year_group", yearGroup: 12, phase: null }, 13), false);
+  assert.equal(isEligibleForYearGroup({ scope: "phase", yearGroup: null, phase: "lower" }, 13), false);
 });

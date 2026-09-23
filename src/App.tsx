@@ -16,9 +16,10 @@ type ScoreDraft = Record<TeamId, string>;
 type PersistedTeam = { id: string; name: string; colour: string; displayOrder: number; active: boolean };
 type PublishedWeek = { id: string; weekNumber: number; quizDate: string; publishedAt: string; scores: Array<{ id: string; score: number; teamId?: string; displayOrder?: number }> };
 type ManagedClass = { id: string; name: string; yearGroup: number; role: "lead" | "editor"; teams: PersistedTeam[] };
-type TeacherProfile = { teacher: { id: string; displayName: string; email: string | null }; classes: ManagedClass[]; needsRegistration: boolean };
 type RegistrationTeam = { name: string; colour: string };
 type LeagueOption = { id: string; name: string; scope: "year_group" | "phase" | "whole_school"; yearGroup: number | null; phase: string | null; eligible: boolean; enrolmentStatus: "active" | "withdrawn" | null };
+type RegistrationLeagueOption = Pick<LeagueOption, "id" | "name" | "scope" | "yearGroup" | "phase">;
+type TeacherProfile = { teacher: { id: string; displayName: string; email: string | null }; classes: ManagedClass[]; availableLeagues: RegistrationLeagueOption[]; needsRegistration: boolean };
 
 const teamColours = ["#f7c948", "#47d990", "#ff626f", "#42a8ff", "#b68cff", "#35d7df", "#fb923c", "#d946ef", "#a3e635", "#f472b6"];
 
@@ -28,6 +29,12 @@ function createScoreDraft(league: LeagueData): ScoreDraft {
 
 function createRegistrationTeams(): RegistrationTeam[] {
   return Array.from({ length: 6 }, (_, index) => ({ name: `Team ${index + 1}`, colour: teamColours[index] }));
+}
+
+function phaseForYearGroup(yearGroup: number) {
+  if (yearGroup <= 9) return "lower";
+  if (yearGroup <= 11) return "middle";
+  return "upper";
 }
 
 function toLeagueData(current: LeagueData, teams: PersistedTeam[], weeks: PublishedWeek[]): LeagueData {
@@ -163,6 +170,7 @@ export function App() {
   const [className, setClassName] = useState("");
   const [yearGroup, setYearGroup] = useState(13);
   const [registrationTeams, setRegistrationTeams] = useState<RegistrationTeam[]>(createRegistrationTeams);
+  const [registrationLeagueIds, setRegistrationLeagueIds] = useState<string[]>([]);
   const [registeringClass, setRegisteringClass] = useState(false);
   const [managedLeague, setManagedLeague] = useState<LeagueData>();
   const [managedLeagueError, setManagedLeagueError] = useState<string>();
@@ -306,6 +314,11 @@ export function App() {
   }, []);
 
   const selectedClass = teacherProfile?.classes.find((candidate) => candidate.id === selectedClassId);
+  const registrationLeagueOptions = useMemo(() => teacherProfile?.availableLeagues.filter((option) => (
+    (option.scope === "year_group" && option.yearGroup === yearGroup)
+    || (option.scope === "phase" && option.phase === phaseForYearGroup(yearGroup))
+    || option.scope === "whole_school"
+  )) ?? [], [teacherProfile, yearGroup]);
   const showingManagedClass = Boolean(selectedClass);
   const displayedLeague = selectedBoardId !== "class" && sharedBoard ? sharedBoard : showingManagedClass && managedLeague ? managedLeague : league;
   const standings = useMemo(() => getStandings(displayedLeague), [displayedLeague]);
@@ -344,6 +357,33 @@ export function App() {
       setLeagueOptions((current) => current.map((item) => item.id === option.id ? { ...item, enrolmentStatus: participating ? "active" : "withdrawn" } : item));
       setAdminStatus(`${option.name} participation updated.`);
     } catch (error) { setAdminStatus(error instanceof Error ? error.message : "Could not update league participation."); }
+  }
+
+  function resetClassRegistration() {
+    setClassName("");
+    setYearGroup(13);
+    setRegistrationTeams(createRegistrationTeams());
+    setRegistrationLeagueIds([]);
+    setProfileError(undefined);
+  }
+
+  function startClassCreation() {
+    resetClassRegistration();
+    setCreatingClass(true);
+    setView("admin");
+  }
+
+  function cancelClassCreation() {
+    if (!teacherProfile?.classes.length) return;
+    resetClassRegistration();
+    setCreatingClass(false);
+    setView("admin");
+  }
+
+  function setRegistrationParticipation(leagueId: string, participating: boolean) {
+    setRegistrationLeagueIds((current) => participating
+      ? [...current, leagueId]
+      : current.filter((id) => id !== leagueId));
   }
 
   function startRosterEdit() {
@@ -510,12 +550,13 @@ export function App() {
       const response = await fetch("/api/teacher-profile", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ className, yearGroup, teams: registrationTeams }),
+        body: JSON.stringify({ className, yearGroup, teams: registrationTeams, leagueIds: registrationLeagueIds }),
       });
       const payload = await response.json() as { error?: string; teacher?: TeacherProfile["teacher"]; class?: ManagedClass };
       if (!response.ok || !payload.teacher || !payload.class) throw new Error(payload.error ?? "Could not create your class.");
-      setTeacherProfile((current) => ({ teacher: payload.teacher!, classes: [...(current?.classes ?? []), payload.class!], needsRegistration: false }));
+      setTeacherProfile((current) => current && ({ ...current, teacher: payload.teacher!, classes: [...current.classes, payload.class!], needsRegistration: false }));
       setSelectedClassId(payload.class.id);
+      resetClassRegistration();
       setCreatingClass(false);
       setView("league");
       setProfileState("ready");
@@ -658,7 +699,7 @@ export function App() {
   }
 
   if (teacherProfile && teacherProfile.classes.length > 1 && !selectedClass && !creatingClass) {
-    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={() => { setCreatingClass(true); setView("admin"); }}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
+    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={startClassCreation}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
   }
 
   return (
@@ -673,7 +714,7 @@ export function App() {
           <button className={view === "admin" ? "active" : ""} onClick={() => setView("admin")}>Admin</button>
           {teacherProfile && teacherProfile.classes.length > 1 && <button onClick={() => setSelectedClassId(undefined)}>Change class</button>}
         </nav>
-        <div className="topbar-actions"><button type="button" className="fullscreen-control" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}><span aria-hidden="true">⛶</span></button><p className="term-label">{selectedBoardId === "class" && selectedClass ? `${selectedClass.name.toUpperCase()} · YEAR ${selectedClass.yearGroup}` : leagueOptions.find((option) => option.id === selectedBoardId)?.name.toUpperCase() ?? league.term.name.toUpperCase()}<br /><strong>{displayedLeague.teams.length} TEAMS · {displayedLeague.quizWeeks.length} WEEKS</strong></p></div>
+        <div className="topbar-actions"><p className="term-label">{selectedBoardId === "class" && selectedClass ? `${selectedClass.name.toUpperCase()} · YEAR ${selectedClass.yearGroup}` : leagueOptions.find((option) => option.id === selectedBoardId)?.name.toUpperCase() ?? league.term.name.toUpperCase()}<br /><strong>{displayedLeague.teams.length} TEAMS · {displayedLeague.quizWeeks.length} WEEKS</strong></p><button type="button" className="fullscreen-control" onClick={() => void toggleFullscreen()} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}><span aria-hidden="true">⛶</span></button></div>
       </header>
 
       {view === "league" ? (
@@ -707,10 +748,12 @@ export function App() {
             {authError && <p role="alert">{authError}</p>}
             {isMicrosoftConfigured() && <button className="save-admin" onClick={() => void signIn()}>Sign in with Microsoft</button>}
           </div> : (teacherProfile?.needsRegistration || creatingClass) ? <form className="class-registration" onSubmit={(event) => void registerClass(event)}>
+            {creatingClass && !teacherProfile?.needsRegistration && <button type="button" className="close" onClick={cancelClassCreation} aria-label="Cancel adding a class">×</button>}
             <div><span className="eyebrow">WELCOME, {teacher.displayName.toUpperCase()}</span><h1>Set up your class</h1><p>Create your form competition once. You can rename teams later; the roster is locked after its first submitted result.</p></div>
             <div className="registration-details"><label>Form or class name<input value={className} onChange={(event) => setClassName(event.target.value)} placeholder="e.g. 13A" required autoFocus /></label><label>Year group<select value={yearGroup} onChange={(event) => setYearGroup(Number(event.target.value))}>{Array.from({ length: 7 }, (_, index) => index + 7).map((year) => <option key={year} value={year}>Year {year}</option>)}</select></label></div>
             <div className="admin-toolbar"><span>{registrationTeams.length} teams</span><div><button type="button" className="team-count-control" onClick={removeRegistrationTeam} disabled={registrationTeams.length <= 2} aria-label="Remove the last team">-</button><button type="button" className="team-count-control" onClick={addRegistrationTeam} disabled={registrationTeams.length >= 24} aria-label="Add a team">+</button></div></div>
             <div className="admin-list">{registrationTeams.map((team, index) => <div className="team-admin-row" key={index}><i style={{ background: team.colour }} /><input value={team.name} onChange={(event) => updateRegistrationTeam(index, "name", event.target.value)} aria-label={`Team ${index + 1} name`} required /><label className="colour-picker"><span>Colour</span><input type="color" value={team.colour} onChange={(event) => updateRegistrationTeam(index, "colour", event.target.value)} aria-label={`Team ${index + 1} colour`} /></label><small>Team {index + 1}</small></div>)}</div>
+            <section className="league-participation registration-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Select the school leaderboards where this class's teams should appear. You can change these choices later.</p></div>{registrationLeagueOptions.map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={registrationLeagueIds.includes(option.id)} onChange={(event) => setRegistrationParticipation(option.id, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
             {profileError && <p role="alert">{profileError}</p>}
             <button className="save-admin" type="submit" disabled={registeringClass}>{registeringClass ? "Creating your class..." : "Create class competition"}</button>
           </form> : teacherProfile && selectedClass ? <section className="class-dashboard">
@@ -719,7 +762,7 @@ export function App() {
             <section className="league-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Choose where this class's teams should appear. Form standings are always private to this class.</p></div>{leagueOptions.filter((option) => option.eligible).map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={option.enrolmentStatus === "active"} onChange={(event) => void setLeagueParticipation(option, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
             {managedLeagueError && <p role="alert">{managedLeagueError}</p>}
             {managedLeague && <section className="class-standings"><div className="section-heading"><span>FORM STANDINGS</span><strong>{managedLeague.quizWeeks.length ? `${managedLeague.quizWeeks.length} Fridays entered` : "First Friday awaits"}</strong></div>{getStandings(managedLeague).map((team, index) => <div key={team.id} style={{ "--team-colour": team.colour } as CSSProperties}><b>{index + 1}</b><span>{team.name}</span><strong>{team.total}</strong></div>)}</section>}
-            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}<button className="save-admin" onClick={() => { setCreatingClass(true); }}>Add another class</button></div>
+            <div className="dashboard-actions">{managedLeague && <button className="save-admin" onClick={() => { setEntryClassId(selectedClass.id); setDraftScores(createScoreDraft(managedLeague)); setShowEntry(true); }}>Add this Friday's results</button>}{managedLeague && managedLeague.quizWeeks.length > 0 && <button className="save-admin" onClick={() => setShowCorrectionPicker(true)}>Correct results</button>}<button className="save-admin" onClick={startClassCreation}>Add another class</button></div>
             {adminStatus && <p role="status">{adminStatus}</p>}
             <button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button>
           </section> : <>

@@ -1,5 +1,6 @@
 import pg from "pg";
 import { requireClassMembership, requireTeacher, upsertTeacher } from "./_auth.js";
+import { phaseForYearGroup } from "./_league-eligibility.js";
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -7,12 +8,6 @@ const quizSeriesId = "10000000-0000-4000-8000-000000000003";
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-}
-
-function phaseFor(yearGroup: number) {
-  if (yearGroup <= 9) return "lower";
-  if (yearGroup <= 11) return "middle";
-  return "upper";
 }
 
 async function signedInTeacher(client: pg.PoolClient, request: Request) {
@@ -35,7 +30,7 @@ export async function GET(request: Request) {
       const classResult = await client.query(`SELECT year_group AS "yearGroup" FROM classes WHERE id = $1`, [classId]);
       if (!classResult.rowCount) return json({ error: "That class could not be found." }, 404);
       const yearGroup = classResult.rows[0].yearGroup as number;
-      const phase = phaseFor(yearGroup);
+      const phase = phaseForYearGroup(yearGroup);
       const result = await client.query(
         `SELECT l.id, l.name, l.scope, l.year_group AS "yearGroup", l.phase,
                 le.status AS "enrolmentStatus", le.enrolled_on AS "enrolledOn", le.withdrawn_on AS "withdrawnOn",
