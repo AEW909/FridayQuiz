@@ -687,7 +687,7 @@ export function App() {
   }
 
   if (!teacher) {
-    return <main className="app-shell auth-shell"><section className="auth-gate"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div><span className="eyebrow">LRGS STAFF ACCESS</span><h1>Run your Friday quiz league.</h1><p>Sign in with your school Microsoft account to set up classes, enter results, and follow every leaderboard you teach.</p>{authError && <p role="alert">{authError}</p>}{isMicrosoftConfigured() && <button className="save-admin" onClick={() => void signIn()}>Sign in with Microsoft</button>}</section></main>;
+    return <main className="app-shell auth-shell"><section className="auth-gate"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>ONE QUIZ. FAR TOO MUCH AT STAKE.</small></div></div><span className="eyebrow">LRGS STAFF ACCESS</span><h1>Run your Friday quiz league.</h1><p>Sign in with your school Microsoft account to set up classes, enter results, and follow every leaderboard you teach.</p>{authError && <p role="alert">{authError}</p>}{isMicrosoftConfigured() && <button className="save-admin" onClick={() => void signIn()}>Sign in with Microsoft</button>}</section></main>;
   }
 
   if (profileState === "loading" || profileState === "idle") {
@@ -699,7 +699,7 @@ export function App() {
   }
 
   if (teacherProfile && teacherProfile.classes.length > 1 && !selectedClass && !creatingClass) {
-    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={startClassCreation}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
+    return <main className="app-shell"><header className="topbar"><div className="brand"><img src="/assets/lrgs-quiz-crest.png" alt="" /><div><span>FRIDAY QUIZ LEAGUE</span><small>ONE QUIZ. FAR TOO MUCH AT STAKE.</small></div></div></header><div className="modal-backdrop class-picker-backdrop"><section className="class-picker" role="dialog" aria-modal="true" aria-labelledby="class-picker-title"><span className="eyebrow">YOUR CLASSES</span><h1 id="class-picker-title">Which class are you running?</h1><div>{teacherProfile.classes.map((classroom) => <button key={classroom.id} type="button" onClick={() => { setSelectedClassId(classroom.id); setView("league"); }}><span>Year {classroom.yearGroup}</span><strong>{classroom.name}</strong><small>{classroom.teams.length} teams · {classroom.role === "lead" ? "Lead teacher" : "Class editor"}</small></button>)}</div><button className="save-admin" onClick={startClassCreation}>Add another class</button><button className="save-admin" onClick={() => { setTeacher(undefined); void signOutFromMicrosoft(); }}>Sign out</button></section></div></main>;
   }
 
   return (
@@ -707,7 +707,7 @@ export function App() {
       <header className="topbar">
         <div className="brand">
           <img src="/assets/lrgs-quiz-crest.png" alt="" />
-          <div><span>FRIDAY QUIZ LEAGUE</span><small>BRIGHT MINDS. A BRIGHTER FRIDAY.</small></div>
+          <div><span>FRIDAY QUIZ LEAGUE</span><small>ONE QUIZ. FAR TOO MUCH AT STAKE.</small></div>
         </div>
         <nav aria-label="Primary navigation">
           <button className={view === "league" ? "active" : ""} onClick={() => setView("league")}>League</button>
