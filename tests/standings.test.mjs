@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners } from "../src/lib/standings.ts";
+import { getChartStandings, getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners } from "../src/lib/standings.ts";
 
 const league = {
   term: { id: "term", name: "Term", startsOn: "2026-09-01", endsOn: "2026-12-18", active: true },
@@ -44,4 +44,19 @@ test("a missing submission remains distinct from an actual zero score", () => {
   assert.equal(getScoreForWeek(withZero, "second", "week-2"), 5);
   assert.equal(getScoreForWeek(withZero, "third", "week-2"), 0);
   assert.equal(getScoreForWeek(withZero, "third", "week-1"), undefined);
+});
+
+test("momentum chart series can be limited without changing standings order", () => {
+  const standings = Array.from({ length: 24 }, (_, index) => ({
+    id: `team-${index + 1}`,
+    termId: "term",
+    name: `Team ${index + 1}`,
+    colour: "#ffffff",
+    displayOrder: index + 1,
+    scores: [24 - index],
+    total: 24 - index,
+  }));
+
+  assert.deepEqual(getChartStandings(standings).map((team) => team.id), standings.slice(0, 20).map((team) => team.id));
+  assert.equal(standings.length, 24);
 });

@@ -8,7 +8,7 @@ import {
   signOutFromMicrosoft,
   type TeacherIdentity,
 } from "./auth/microsoft";
-import { getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners, type Standing } from "./lib/standings";
+import { getChartStandings, getCumulativeScores, getScoreForWeek, getStandings, getTermLeaders, getWeekWinners, type Standing } from "./lib/standings";
 import type { LeagueData, TeamId } from "./types";
 
 type View = "league" | "admin";
@@ -22,6 +22,7 @@ type RegistrationLeagueOption = Pick<LeagueOption, "id" | "name" | "scope" | "ye
 type TeacherProfile = { teacher: { id: string; displayName: string; email: string | null }; classes: ManagedClass[]; availableLeagues: RegistrationLeagueOption[]; needsRegistration: boolean };
 
 const teamColours = ["#f7c948", "#47d990", "#ff626f", "#42a8ff", "#b68cff", "#35d7df", "#fb923c", "#d946ef", "#a3e635", "#f472b6"];
+const chartTeamLimit = 20;
 
 function createScoreDraft(league: LeagueData): ScoreDraft {
   return Object.fromEntries(league.teams.map((team) => [team.id, ""]));
@@ -148,7 +149,7 @@ function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: num
     return () => cancelAnimationFrame(frame);
   }, [teams, revealKey]);
 
-  return <canvas ref={canvasRef} width="670" height="330" aria-label="Cumulative points by week for all teams" />;
+  return <canvas ref={canvasRef} width="670" height="330" aria-label={`Cumulative points by week for the top ${teams.length} teams`} />;
 }
 
 export function App() {
@@ -329,6 +330,8 @@ export function App() {
   const showingManagedClass = Boolean(selectedClass);
   const displayedLeague = selectedBoardId !== "class" && sharedBoard ? sharedBoard : showingManagedClass && managedLeague ? managedLeague : league;
   const standings = useMemo(() => getStandings(displayedLeague), [displayedLeague]);
+  const chartStandings = useMemo(() => getChartStandings(standings, chartTeamLimit), [standings]);
+  const chartIsLimited = standings.length > chartStandings.length;
   const standingsScrolls = standings.length > 6;
   const winner = standings[0];
   const termLeaders = getTermLeaders(standings);
@@ -737,7 +740,7 @@ export function App() {
               ))}
             </div>
           </section>
-          <section className="chart-panel scoreboard-panel"><div className="section-heading"><span>TEAM MOMENTUM</span><strong>Cumulative points by week</strong></div><MomentumChart teams={standings} revealKey={resultsRevealKey} /><div className="legend">{standings.map((team) => <span key={team.id}><i style={{ background: team.colour }} />{team.name}</span>)}</div></section>
+          <section className="chart-panel scoreboard-panel"><div className="section-heading"><span>TEAM MOMENTUM</span><strong>{chartIsLimited ? `Top ${chartStandings.length} cumulative points by week` : "Cumulative points by week"}</strong></div><MomentumChart teams={chartStandings} revealKey={resultsRevealKey} /><div className="legend">{chartStandings.map((team) => <span key={team.id}><i style={{ background: team.colour }} />{team.name}</span>)}</div></section>
           <section className={teacher ? "league-bottom with-action" : "league-bottom"}>
             <section className={`winner-panel ${weeklyWinners.length > 1 ? "joint-winner" : ""}`}><img src="/assets/champion-trophy.png" alt="Golden quiz league trophy" /><div><span>{weeklyWinners.length > 2 ? "THIS WEEK'S RESULT" : "THIS WEEK'S WINNER"}</span><h1>{weeklyWinnerLabel}</h1><p>{weeklyWinnerDescription}</p></div></section>
             <section className="latest-panel"><span>LATEST SCORES</span>{latestScores.map((team) => <div key={team.id}><i style={{ background: team.colour }} />{team.name}<b className={team.latestScore === undefined && hasPublishedResults ? "not-entered" : ""}>{hasPublishedResults ? team.latestScore ?? "Not entered" : "-"}</b></div>)}</section>

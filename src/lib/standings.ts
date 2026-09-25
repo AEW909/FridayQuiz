@@ -46,6 +46,10 @@ export function getTermLeaders(standings: Standing[]): Standing[] {
   return leadingScore === undefined ? [] : standings.filter((team) => team.total === leadingScore);
 }
 
+export function getChartStandings(standings: Standing[], limit = 20): Standing[] {
+  return standings.slice(0, limit);
+}
+
 export function getWeekWinners(league: LeagueData, quizWeekId: QuizWeekId): WeekWinner[] {
   const scoredTeams = league.teams.flatMap((team) => {
     const score = getScoreForWeek(league, team.id, quizWeekId);
