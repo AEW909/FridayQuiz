@@ -13,7 +13,7 @@ import type { LeagueData, TeamId } from "./types";
 
 type View = "league" | "admin";
 type ScoreDraft = Record<TeamId, string>;
-type PersistedTeam = { id: string; name: string; colour: string; displayOrder: number; active: boolean };
+type PersistedTeam = { id: string; name: string; colour: string; displayOrder: number; active: boolean; className?: string };
 type PublishedWeek = { id: string; weekNumber: number; quizDate: string; publishedAt: string; scores: Array<{ id: string; score: number; teamId?: string; displayOrder?: number }> };
 type ManagedClass = { id: string; name: string; yearGroup: number; role: "lead" | "editor"; teams: PersistedTeam[] };
 type RegistrationTeam = { name: string; colour: string };
@@ -46,6 +46,7 @@ function toLeagueData(current: LeagueData, teams: PersistedTeam[], weeks: Publis
       name: team.name,
       colour: team.colour,
       displayOrder: team.displayOrder,
+      className: team.className,
     })),
     quizWeeks: weeks.map((week) => ({ id: week.id, termId: current.term.id, weekNumber: week.weekNumber, quizDate: week.quizDate, publishedAt: week.publishedAt })),
     weeklyScores: weeks.flatMap((week) => week.scores.flatMap((score) => {
@@ -73,7 +74,14 @@ function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: num
     const { width, height } = canvas;
     const padding = { left: 48, right: 26, top: 18, bottom: 34 };
     const totals = teams.map((team) => getCumulativeScores(team.scores));
-    const max = Math.max(100, Math.ceil(Math.max(...totals.flat()) / 100) * 100);
+    const values = totals.flat();
+    const lowestValue = values.length ? Math.min(...values) : 0;
+    const highestValue = values.length ? Math.max(...values) : 100;
+    const dataRange = Math.max(highestValue - lowestValue, 10);
+    const verticalPadding = Math.max(dataRange * .08, 4);
+    const yMin = Math.max(0, lowestValue - verticalPadding);
+    const yMax = Math.max(highestValue + verticalPadding, yMin + 10);
+    const yRange = Math.max(yMax - yMin, 10);
     const usableWidth = width - padding.left - padding.right;
     const usableHeight = height - padding.top - padding.bottom;
 
@@ -91,7 +99,7 @@ function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: num
         chart.moveTo(padding.left, y);
         chart.lineTo(width - padding.right, y);
         chart.stroke();
-        chart.fillText(String(max - (max * index) / 5), 2, y + 4);
+        chart.fillText(String(Math.round(yMax - (yRange * index) / 5)), 2, y + 4);
       }
 
       teams.forEach((team, index) => {
@@ -100,7 +108,7 @@ function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: num
         chart.lineWidth = 3;
         totals[index].forEach((value, weekIndex) => {
           const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
-          const y = padding.top + usableHeight - ((value * progress) / max) * usableHeight;
+          const y = padding.top + usableHeight - (((value - yMin) * progress) / yRange) * usableHeight;
           if (weekIndex === 0) chart.moveTo(x, y);
           else chart.lineTo(x, y);
         });
@@ -109,7 +117,7 @@ function MomentumChart({ teams, revealKey }: { teams: Standing[]; revealKey: num
         totals[index].forEach((value, weekIndex) => {
           if (progress < (weekIndex + 1) / Math.max(totals[index].length, 1)) return;
           const x = padding.left + (usableWidth * weekIndex) / Math.max(totals[index].length - 1, 1);
-          const y = padding.top + usableHeight - ((value * progress) / max) * usableHeight;
+          const y = padding.top + usableHeight - (((value - yMin) * progress) / yRange) * usableHeight;
           chart.beginPath();
           chart.fillStyle = team.colour;
           chart.arc(x, y, 4, 0, Math.PI * 2);
@@ -148,7 +156,6 @@ export function App() {
   const [view, setView] = useState<View>("league");
   const [showEntry, setShowEntry] = useState(false);
   const [draftScores, setDraftScores] = useState<ScoreDraft>(() => createScoreDraft(seedLeague));
-  const [saved, setSaved] = useState(false);
   const [savingResults, setSavingResults] = useState(false);
   const [scoreError, setScoreError] = useState<string>();
   const [correctionWeekId, setCorrectionWeekId] = useState<string>();
@@ -608,14 +615,12 @@ export function App() {
         }));
         await refreshLeague();
       }
-      setResultsRevealKey((current) => current + 1);
-      setSaved(true);
-      window.setTimeout(() => {
-        setShowEntry(false);
-        setSaved(false);
-        setDraftScores(createScoreDraft(scoreLeague));
-        setEntryClassId(undefined);
-      }, 1500);
+      setShowEntry(false);
+      setDraftScores(createScoreDraft(scoreLeague));
+      setEntryClassId(undefined);
+      setSelectedBoardId("class");
+      setView("league");
+      requestAnimationFrame(() => setResultsRevealKey((current) => current + 1));
     } catch (error) {
       setScoreError(error instanceof Error ? error.message : "Could not publish results.");
     } finally {
@@ -726,7 +731,7 @@ export function App() {
               {standings.map((team, index) => (
                 <article className={`team-row ${index === 0 ? "first" : ""} ${resultsRevealKey ? "results-reveal" : ""}`} key={`${team.id}-${resultsRevealKey}`} style={{ "--team-colour": team.colour, "--reveal-delay": `${index * 85}ms` } as CSSProperties}>
                   <strong className="rank" aria-label={`Rank ${index + 1}`}>{index + 1}</strong><span className="colour-bar" aria-hidden="true" />
-                  <div><h2>{team.name}</h2><p>{index === 0 ? "SETTING THE PACE" : index === 1 ? "CLOSING THE GAP" : "STILL IN THE HUNT"}</p></div>
+                  <div className="team-name-block"><div className="team-name-line"><h2>{team.name}</h2>{team.className && <span className="form-tag">{team.className}</span>}</div><p>{index === 0 ? "SETTING THE PACE" : index === 1 ? "CLOSING THE GAP" : "STILL IN THE HUNT"}</p></div>
                   <b>{team.total}</b>
                 </article>
               ))}
@@ -777,7 +782,7 @@ export function App() {
         </section>
       )}
 
-      {showEntry && entryLeague && <div className="modal-backdrop" role="presentation"><form className={`score-modal ${saved ? "results-published" : ""}`} onSubmit={(event) => void submitResults(event)}><button type="button" className="close" onClick={() => { setShowEntry(false); setEntryClassId(undefined); }} aria-label="Close score entry">Close</button><span className="eyebrow">PUBLISH RESULTS</span><h1>{saved ? "Results are live" : "Enter Friday's results"}</h1><p>{saved ? "The scoreboard is redrawing now." : "Each team gets one score. Publishing updates the league table and momentum chart straight away."}</p><div className="score-grid">{entryLeague.teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`score-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, -1)} aria-label={`Decrease ${team.name} score`}>-</button><input id={`score-${team.id}`} aria-label={`${team.name} score`} type="number" min="0" step="1" value={draftScores[team.id]} onChange={(event) => setDraftScores({ ...draftScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, 1)} aria-label={`Increase ${team.name} score`}>+</button></div></div>)}</div>{scoreError && <p role="alert">{scoreError}</p>}<button className="save-results" type="submit" disabled={savingResults || saved}>{saved ? "Scoreboard live" : savingResults ? "Publishing results..." : "Publish results"}</button></form></div>}
+      {showEntry && entryLeague && <div className="modal-backdrop" role="presentation"><form className="score-modal" onSubmit={(event) => void submitResults(event)}><button type="button" className="close" onClick={() => { setShowEntry(false); setEntryClassId(undefined); }} aria-label="Close score entry">Close</button><span className="eyebrow">PUBLISH RESULTS</span><h1>Enter Friday's results</h1><p>Each team gets one score. Publishing updates the league table and momentum chart straight away.</p><div className="score-grid">{entryLeague.teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`score-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, -1)} aria-label={`Decrease ${team.name} score`}>-</button><input id={`score-${team.id}`} aria-label={`${team.name} score`} type="number" min="0" step="1" value={draftScores[team.id]} onChange={(event) => setDraftScores({ ...draftScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(draftScores, setDraftScores, team.id, 1)} aria-label={`Increase ${team.name} score`}>+</button></div></div>)}</div>{scoreError && <p role="alert">{scoreError}</p>}<button className="save-results" type="submit" disabled={savingResults}>{savingResults ? "Publishing results..." : "Publish results"}</button></form></div>}
       {showCorrectionPicker && managedLeague && selectedClass && <div className="modal-backdrop" role="presentation"><section className="class-picker correction-picker" role="dialog" aria-modal="true" aria-labelledby="correction-picker-title"><button type="button" className="close" onClick={() => setShowCorrectionPicker(false)} aria-label="Close result selection">Close</button><span className="eyebrow">CORRECT RESULTS</span><h1 id="correction-picker-title">Choose a Friday</h1><div>{[...managedLeague.quizWeeks].sort((left, right) => right.quizDate.localeCompare(left.quizDate)).map((week) => <button key={week.id} type="button" onClick={() => { setShowCorrectionPicker(false); openCorrection(week.id, managedLeague, selectedClass.id); }}><span>Week {week.weekNumber}</span><strong>{week.quizDate}</strong><small>Open score correction</small></button>)}</div></section></div>}
       {correctionWeekId && (correctionClassId ? managedLeague : league) && <div className="modal-backdrop" role="presentation"><form className="score-modal" onSubmit={(event) => void submitCorrection(event)}><button type="button" className="close" onClick={() => { setCorrectionWeekId(undefined); setCorrectionClassId(undefined); }} aria-label="Close correction">Close</button><span className="eyebrow">CORRECT RESULTS</span><h1>Correct a published Friday</h1><p>Changed scores are recorded with your identity, the previous value, and the reason below.</p><div className="score-grid">{(correctionClassId ? managedLeague! : league).teams.map((team) => <div className="score-row" key={team.id}><label htmlFor={`correction-${team.id}`}><i style={{ background: team.colour }} />{team.name}</label><div className="score-stepper"><button type="button" onClick={() => adjustScore(correctionScores, setCorrectionScores, team.id, -1)} aria-label={`Decrease ${team.name} corrected score`}>-</button><input id={`correction-${team.id}`} aria-label={`${team.name} corrected score`} type="number" min="0" step="1" value={correctionScores[team.id] ?? ""} onChange={(event) => setCorrectionScores({ ...correctionScores, [team.id]: event.target.value })} /><button type="button" onClick={() => adjustScore(correctionScores, setCorrectionScores, team.id, 1)} aria-label={`Increase ${team.name} corrected score`}>+</button></div></div>)}</div><label className="correction-reason"><span>Reason for correction</span><textarea value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} required /></label><label className="confirmation"><input type="checkbox" checked={correctionConfirmed} onChange={(event) => setCorrectionConfirmed(event.target.checked)} />I confirm these corrected results should replace the published scores.</label>{correctionError && <p role="alert">{correctionError}</p>}<button className="save-results" type="submit" disabled={correctingResults}>{correctingResults ? "Saving correction..." : "Confirm correction"}</button></form></div>}
     </main>

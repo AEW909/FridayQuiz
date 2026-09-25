@@ -46,7 +46,10 @@ nav button.active { border-color: #3187ff; color: #fff; box-shadow: 0 9px 15px -
 .team-row.first { border-color: #f7c948; background: rgba(58, 45, 11, .72); box-shadow: inset 4px 0 22px rgba(247, 201, 72, .25), 0 0 18px rgba(247, 201, 72, .18); }
 .rank { color: var(--team-colour); font-size: 47px; font-weight: 800; line-height: 1; text-align: center; text-shadow: 0 0 14px color-mix(in srgb, var(--team-colour) 70%, transparent); }
 .colour-bar { width: 6px; height: 36px; background: var(--team-colour); box-shadow: 0 0 12px var(--team-colour); }
-.team-row h2 { margin: 0; color: #fff; font-size: 27px; font-weight: 700; line-height: 1; }
+.team-name-block { min-width: 0; }
+.team-name-line { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.team-row h2 { min-width: 0; margin: 0; overflow: hidden; color: #fff; font-size: 27px; font-weight: 700; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.form-tag { flex: 0 0 auto; border: 1px solid rgba(126, 170, 236, .52); background: rgba(28, 57, 102, .52); color: #c7dbff; padding: 3px 6px; font-size: 8px; font-weight: 700; letter-spacing: .1em; line-height: 1; text-transform: uppercase; }
 .team-row p { margin: 5px 0 0; color: #a7b8dc; font-size: 9px; font-weight: 700; letter-spacing: .18em; }
 .team-row b { color: var(--team-colour); font-family: 'Barlow Condensed', sans-serif; font-size: 42px; line-height: 1; text-align: right; text-shadow: 0 0 14px color-mix(in srgb, var(--team-colour) 70%, transparent); }
 .team-row.results-reveal { animation: score-row-reveal 680ms cubic-bezier(.18,.86,.24,1) both; animation-delay: var(--reveal-delay); }

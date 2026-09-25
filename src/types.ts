@@ -16,6 +16,7 @@ export interface Team {
   name: string;
   colour: string;
   displayOrder: number;
+  className?: string;
 }
 
 export interface QuizWeek {
