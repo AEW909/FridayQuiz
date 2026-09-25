@@ -38,6 +38,17 @@ function phaseForYearGroup(yearGroup: number) {
   return "upper";
 }
 
+function getDefaultRegistrationLeagueIds(availableLeagues: RegistrationLeagueOption[] | undefined, yearGroup: number) {
+  const phase = phaseForYearGroup(yearGroup);
+  return availableLeagues
+    ?.filter((option) => (
+      (option.scope === "year_group" && option.yearGroup === yearGroup)
+      || (option.scope === "phase" && option.phase === phase)
+      || option.scope === "whole_school"
+    ))
+    .map((option) => option.id) ?? [];
+}
+
 function toLeagueData(current: LeagueData, teams: PersistedTeam[], weeks: PublishedWeek[]): LeagueData {
   return {
     ...current,
@@ -219,6 +230,7 @@ export function App() {
         setSelectedClassId(payload.classes[0].id);
         setView("league");
       } else if (payload.needsRegistration) {
+        setRegistrationLeagueIds(getDefaultRegistrationLeagueIds(payload.availableLeagues, yearGroup));
         setView("admin");
       }
       setProfileState("ready");
@@ -373,7 +385,7 @@ export function App() {
     setClassName("");
     setYearGroup(13);
     setRegistrationTeams(createRegistrationTeams());
-    setRegistrationLeagueIds([]);
+    setRegistrationLeagueIds(getDefaultRegistrationLeagueIds(teacherProfile?.availableLeagues, 13));
     setProfileError(undefined);
   }
 
@@ -758,7 +770,7 @@ export function App() {
           </div> : (teacherProfile?.needsRegistration || creatingClass) ? <form className="class-registration" onSubmit={(event) => void registerClass(event)}>
             {creatingClass && !teacherProfile?.needsRegistration && <button type="button" className="close" onClick={cancelClassCreation} aria-label="Cancel adding a class">×</button>}
             <div><span className="eyebrow">WELCOME, {teacher.displayName.toUpperCase()}</span><h1>Set up your class</h1><p>Create your form competition once. You can rename teams later; the roster is locked after its first submitted result.</p></div>
-            <div className="registration-details"><label>Form or class name<input value={className} onChange={(event) => setClassName(event.target.value)} placeholder="e.g. 13A" required autoFocus /></label><label>Year group<select value={yearGroup} onChange={(event) => setYearGroup(Number(event.target.value))}>{Array.from({ length: 7 }, (_, index) => index + 7).map((year) => <option key={year} value={year}>Year {year}</option>)}</select></label></div>
+            <div className="registration-details"><label>Form or class name<input value={className} onChange={(event) => setClassName(event.target.value)} placeholder="e.g. 13A" required autoFocus /></label><label>Year group<select value={yearGroup} onChange={(event) => { const nextYearGroup = Number(event.target.value); setYearGroup(nextYearGroup); setRegistrationLeagueIds(getDefaultRegistrationLeagueIds(teacherProfile?.availableLeagues, nextYearGroup)); }}>{Array.from({ length: 7 }, (_, index) => index + 7).map((year) => <option key={year} value={year}>Year {year}</option>)}</select></label></div>
             <div className="admin-toolbar"><span>{registrationTeams.length} teams</span><div><button type="button" className="team-count-control" onClick={removeRegistrationTeam} disabled={registrationTeams.length <= 2} aria-label="Remove the last team">-</button><button type="button" className="team-count-control" onClick={addRegistrationTeam} disabled={registrationTeams.length >= 24} aria-label="Add a team">+</button></div></div>
             <div className="admin-list">{registrationTeams.map((team, index) => <div className="team-admin-row" key={index}><i style={{ background: team.colour }} /><input value={team.name} onChange={(event) => updateRegistrationTeam(index, "name", event.target.value)} aria-label={`Team ${index + 1} name`} required /><label className="colour-picker"><span>Colour</span><input type="color" value={team.colour} onChange={(event) => updateRegistrationTeam(index, "colour", event.target.value)} aria-label={`Team ${index + 1} colour`} /></label><small>Team {index + 1}</small></div>)}</div>
             <section className="league-participation registration-participation"><div><span className="eyebrow">SHARED LEAGUES</span><p>Select the school leaderboards where this class's teams should appear. You can change these choices later.</p></div>{registrationLeagueOptions.map((option) => <label key={option.id}><span><strong>{option.name}</strong><small>{option.scope === "year_group" ? "Your year group" : option.scope === "phase" ? "Your school phase" : "All participating classes"}</small></span><input type="checkbox" checked={registrationLeagueIds.includes(option.id)} onChange={(event) => setRegistrationParticipation(option.id, event.target.checked)} aria-label={`Participate in ${option.name}`} /></label>)}</section>
