@@ -1,0 +1,19 @@
+{
+  "name": "Friday Quiz League",
+  "short_name": "Friday Quiz",
+  "description": "The LRGS Friday Quiz League staff scoreboard.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#06152d",
+  "theme_color": "#071a36",
+  "icons": [
+    {
+      "src": "/assets/lrgs-quiz-crest.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
